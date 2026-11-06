@@ -35,14 +35,14 @@ public final class WallpaperStore: Sendable {
     public func save(_ info: WallpaperInfo) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .secondsSince1970
         try encoder.encode(info).write(to: url(WallpaperFile.info, in: info.id), options: .atomic)
     }
 
     /// Every readable wallpaper, oldest first. An unreadable `info.json` hides only that wallpaper.
     public func loadAll() -> [WallpaperInfo] {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .secondsSince1970
         let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         return folders
             .compactMap { folder -> WallpaperInfo? in

@@ -83,6 +83,20 @@ struct FrameTimingTests {
     }
 }
 
+@Suite("Bitrate")
+struct BitrateTests {
+    @Test func usesLessDataPerPixelAtHighFrameRates() {
+        #expect(HEVCWriter.bitrate(width: 1920, height: 1080, fps: 30) == Int(1920.0 * 1080 * 30 * 0.15))
+        #expect(HEVCWriter.bitrate(width: 1920, height: 1080, fps: 60) == Int(1920.0 * 1080 * 60 * 0.10))
+        #expect(HEVCWriter.bitrate(width: 1920, height: 1080, fps: 120) == Int(1920.0 * 1080 * 120 * 0.07))
+    }
+
+    @Test func staysWithinItsLimits() {
+        #expect(HEVCWriter.bitrate(width: 64, height: 64, fps: 10) == 1_500_000)
+        #expect(HEVCWriter.bitrate(width: 7680, height: 4320, fps: 120) == 100_000_000)
+    }
+}
+
 @Suite("Enlarge policy")
 struct EnlargePolicyTests {
     @Test func smallPixelArtScalesFourTimesWithSharpPixels() {
