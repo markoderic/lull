@@ -41,6 +41,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.animates = true
         popover.contentViewController = hosting
         popover.delegate = self
+        // Left alone, it inherits from the menu bar, whose look depends on the real wallpaper.
+        popover.appearance = NSApp.effectiveAppearance
         self.popover = popover
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

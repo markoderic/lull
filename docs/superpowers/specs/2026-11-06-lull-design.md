@@ -138,6 +138,21 @@ The panel opens with the standard popover animation. Wallpaper changes crossfade
 | Display connected, removed or changed | Windows rebuilt. |
 | Coverage check fails | Assumes visible. |
 
+## Measured results of the finished app (M5 Pro, macOS 27.0.1, release build)
+
+CPU is a percentage of one core, on an 18-core chip. WindowServer sat around 4–5% before Lull did anything.
+
+| What's on screen | Lull | Decoder | WindowServer | Lull memory | Decoder memory |
+|---|---|---|---|---|---|
+| Paused, another app focused | 0.00% | 0% | no added load | 16 MB | up to 36 MB |
+| Still wallpaper | 0.00% | 0% | no added load | 24 MB | none |
+| GIF at its own 12.5 FPS | 1.1% | 0.8% | 9.6% | 21 MB | 23 MB |
+| 1080p video, 30 FPS | 1.6% | 1.7% | 13.4% | 28 MB | 51 MB |
+| GIF with Smooth Motion, 120 FPS | 3.6% | 4.3% | 44.6% | 22 MB | 55 MB |
+| 4K video, 120 FPS | 4.1% | 7.0% | 44.9% | 56 MB | 430 MB |
+
+13 MB at launch with no wallpaper. A still wallpaper had zero idle wakeups over 10 seconds. After Smooth Motion the Neural Engine keeps about 13 MB until quit, so memory can sit around 36 MB.
+
 ## Measured evidence (M5 Pro, macOS 27.0.1, throwaway prototype)
 
 | What's playing | GPU | Total CPU (% of one core) | Share of whole CPU |

@@ -18,30 +18,37 @@ struct WallpaperTile: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                shape.fill(.quaternary)
-                if let image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+            shape.fill(.quaternary)
+                .aspectRatio(16.0 / 10.0, contentMode: .fit)
+                .overlay {
+                    // In an overlay, a wider image can't change the tile's size.
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
                 }
-                switch state {
-                case .ready:
-                    EmptyView()
-                case .missing:
-                    shape.fill(.black.opacity(0.45))
-                    Text("Missing")
-                        .font(.caption2)
-                        .foregroundStyle(.white)
-                case .working(let progress):
-                    shape.fill(.black.opacity(0.35))
-                    ProgressView(value: min(max(progress, 0), 1))
-                        .progressViewStyle(.circular)
-                        .controlSize(.small)
-                        .tint(.white)
+                .overlay {
+                    switch state {
+                    case .ready:
+                        EmptyView()
+                    case .missing:
+                        ZStack {
+                            shape.fill(.black.opacity(0.45))
+                            Text("Missing")
+                                .font(.caption2)
+                                .foregroundStyle(.white)
+                        }
+                    case .working(let progress):
+                        ZStack {
+                            shape.fill(.black.opacity(0.35))
+                            ProgressView(value: min(max(progress, 0), 1))
+                                .progressViewStyle(.circular)
+                                .controlSize(.small)
+                                .tint(.white)
+                        }
+                    }
                 }
-            }
-            .aspectRatio(16.0 / 10.0, contentMode: .fit)
             .clipShape(shape)
             .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
             .overlay {
