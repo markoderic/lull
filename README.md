@@ -79,7 +79,6 @@ The design and the evidence behind it are in [the design spec](docs/superpowers/
 - **Desktop only.** The lock screen shows your normal wallpaper.
 - **Menu bar colors follow your real wallpaper.** macOS picks the menu bar's text color from it, without knowing about the animation on top. A wallpaper that's much lighter or darker than your real one can make menu bar text harder to read.
 - **Translucent full-screen windows count as covering the desktop,** so the wallpaper pauses behind them.
-- **Fast clicks on the desktop can pause briefly** on systems that show extra windows at the moment of the click. Lull ignores the ones it knows about.
 - **WebM isn't supported,** because Apple's video frameworks don't reliably open it.
 - **Smooth Motion has limits.** Thin lines can wobble in generated frames, and hard cuts become a very quick dissolve.
 
