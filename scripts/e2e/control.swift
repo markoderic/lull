@@ -83,7 +83,11 @@ case "cover":
     }
     window.orderFrontRegardless()
     if takesFocus {
-        app.activate()
+        // macOS can decline an activation, so keep asking while the window is up.
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+            if !app.isActive { app.activate(ignoringOtherApps: true) }
+        }
+        app.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
     if mode == "fullscreen" {

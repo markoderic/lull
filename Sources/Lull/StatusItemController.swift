@@ -30,7 +30,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func open() {
-        guard popover == nil, let button = statusItem.button else { return }
+        guard !isOpen, let button = statusItem.button, button.window != nil else { return }
+        // A popover that failed to show never reports closing, so it mustn't block the next attempt.
+        discardPopover()
         model.panelDidOpen()
         let hosting = NSHostingController(rootView: PanelView(model: model, onAdd: { [weak self] in self?.chooseFiles() }))
         hosting.sizingOptions = [.preferredContentSize]
@@ -43,6 +45,17 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+        if !popover.isShown {
+            discardPopover()
+            model.panelDidClose()
+        }
+    }
+
+    private func discardPopover() {
+        popover?.delegate = nil
+        // Releasing the content frees the panel's views and thumbnails.
+        popover?.contentViewController = nil
+        popover = nil
     }
 
     func close() {
@@ -50,9 +63,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
-        // Releasing the content frees the panel's views and thumbnails.
-        popover?.contentViewController = nil
-        popover = nil
+        discardPopover()
         model.panelDidClose()
         // Hand focus back to whatever was in front before the panel opened. The wallpaper windows
         // can't hide, so this doesn't touch them.

@@ -306,5 +306,7 @@ final class WallpaperEngine {
     #if DEBUG
     var debugWindowCount: Int { windows.count }
     var debugPlayerRate: Float? { player?.rate }
+    /// Whether the panel's preview has video it can show.
+    var debugPreviewReady: Bool { previews.contains { $0.isReadyForDisplay } }
     #endif
 }

@@ -13,13 +13,18 @@ final class PlaybackMonitor {
     private var coverageTimer: Timer?
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     private let onDecision: (PlaybackDecision) -> Void
+    /// Called whenever anything the rule looks at changes, even if the decision doesn't.
+    var onInputsChange: ((PlaybackInputs) -> Void)?
 
     init(rule: PauseRuleMode, onDecision: @escaping (PlaybackDecision) -> Void) {
         self.onDecision = onDecision
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        // Lock notifications only report changes, so ask once in case of launching while locked.
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
         inputs = PlaybackInputs(
             rule: rule,
             finderIsFrontmost: front == Self.finderBundleID,
+            screenLocked: session?["CGSSessionScreenIsLocked"] as? Bool ?? false,
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled
         )
         startObserving()
@@ -51,6 +56,7 @@ final class PlaybackMonitor {
     }
 
     private func apply() {
+        onInputsChange?(inputs)
         let newDecision = PauseRule.decide(inputs)
         guard newDecision != decision else { return }
         decision = newDecision

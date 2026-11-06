@@ -46,7 +46,7 @@ struct WallpaperTile: View {
             .overlay(shape.strokeBorder(.separator, lineWidth: 0.5))
             .overlay {
                 if isSelected {
-                    shape.inset(by: -2).strokeBorder(Color.accentColor, lineWidth: 2)
+                    shape.strokeBorder(Color.accentColor, lineWidth: 2)
                 }
             }
             .contentShape(shape)

@@ -134,19 +134,17 @@ struct PanelView: View {
                 }
                 AddTile(action: onAdd)
             }
-            .padding(3)
         }
         .scrollDisabled(rows <= 3)
         .scrollIndicators(.never)
         .frame(height: gridHeight(rows: min(rows, 3)))
-        .padding(.horizontal, -3)
     }
 
     /// Each tile is a quarter of the panel's inner width, at 16:10.
     private func gridHeight(rows: Int) -> CGFloat {
         let tileWidth = (320.0 - 24.0 - 18.0) / 4.0
         let tileHeight = tileWidth * 10.0 / 16.0
-        return CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 6 + 6
+        return CGFloat(rows) * tileHeight + CGFloat(max(rows - 1, 0)) * 6
     }
 
     private func tileState(for info: WallpaperInfo) -> WallpaperTile.State {
@@ -312,7 +310,7 @@ private struct StillControls: View {
                 ),
                 in: 0...Double(max(info.frameCount - 1, 1)),
                 onEditingChanged: { isEditing in
-                    if !isEditing { model.setStillFrame(info.stillFrame, commit: true) }
+                    if !isEditing, let frame = model.current?.stillFrame { model.setStillFrame(frame, commit: true) }
                 }
             )
             .labelsHidden()

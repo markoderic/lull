@@ -60,17 +60,40 @@ final class DebugBridge {
             if let pending = model.pendingImports.first { model.cancelImport(pending.id) }
             else if let id = model.currentID { model.cancelVersion(id) }
         case "snapshot": snapshot(to: argument)
+        case "appearance":
+            NSApp.appearance = NSAppearance(named: argument == "dark" ? .darkAqua : .aqua)
+        case "login":
+            model.setLaunchAtLogin(argument == "on")
         case "quit": NSApp.terminate(nil)
         default: break
         }
         writeState()
     }
 
+    /// Renders the panel's layers over a background matching the popover. Video layers can't be
+    /// captured this way, so the preview only shows up for still wallpapers.
     private func snapshot(to path: String) {
-        guard let view = statusItem.panelView,
-              let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
-        view.cacheDisplay(in: view.bounds, to: representation)
-        try? representation.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        guard let view = statusItem.panelView, let layer = view.layer else { return }
+        let scale = view.window?.backingScaleFactor ?? 2
+        let width = Int(view.bounds.width * scale), height = Int(view.bounds.height * scale)
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+        var background = NSColor.windowBackgroundColor.cgColor
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            background = NSColor.windowBackgroundColor.cgColor
+        }
+        context.setFillColor(background)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.scaleBy(x: scale, y: scale)
+        // Layers render top down, and bitmap contexts are bottom up.
+        context.translateBy(x: 0, y: view.bounds.height)
+        context.scaleBy(x: 1, y: -1)
+        layer.render(in: context)
+        guard let image = context.makeImage() else { return }
+        try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
     }
 
     private func writeState() {
@@ -99,6 +122,8 @@ final class DebugBridge {
             "desktopOpen": model.inputs.desktopIsOpen,
             "engineWantsPlaying": model.engine.wantsPlaying,
             "enginePlayerLoaded": model.engine.isPlayerLoaded,
+            "previewReady": model.engine.debugPreviewReady,
+            "launchAtLogin": model.launchAtLogin,
             "enginePlayerRate": model.engine.playerRate,
             "engineTime": model.engine.currentTime,
             "engineWindows": model.engine.windowCount,

@@ -21,7 +21,8 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 APP = ROOT / "dist/debug/Lull.app/Contents/MacOS/Lull"
-CONTROL = ROOT / ".build/e2e-control"
+CONTROL_APP = ROOT / ".build/e2e-control.app"
+CONTROL = CONTROL_APP / "Contents/MacOS/e2e-control"
 
 
 class Run:
@@ -111,7 +112,7 @@ class Run:
         ).stdout
         blocks = out.split("Processes:")[2:]
         totals = {"app": 0.0, "decoder": 0.0, "windowserver": 0.0}
-        memory = {"decoder": ""}
+        memory = {"decoderMemory": ""}
         for block in blocks:
             for line in block.splitlines():
                 fields = line.split()
@@ -127,14 +128,24 @@ class Run:
                 elif command.startswith("VTDecoder"):
                     totals["decoder"] += cpu
                     if fields[-1].rstrip("+-").endswith("M"):
-                        memory["decoder"] = fields[-1]
+                        memory["decoderMemory"] = fields[-1]
                 elif command == "WindowServer":
                     totals["windowserver"] += cpu
         count = max(len(blocks), 1)
         return {k: round(v / count, 1) for k, v in totals.items()} | memory
 
     def cover(self, mode, seconds):
-        return subprocess.Popen([str(CONTROL), "cover", mode, str(seconds)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        """Opens a test window. Launched through LaunchServices, because modern macOS only lets
+        an app take focus at launch if it was started the way a person would start it."""
+        log = open(self.tmp / "cover.log", "a")
+        process = subprocess.Popen(
+            ["open", "-n", "-W", str(CONTROL_APP), "--args", "cover", mode, str(seconds)],
+            stdout=log, stderr=log,
+        )
+        return process
+
+    def end_covers(self):
+        subprocess.run(["pkill", "-f", "e2e-control.app/Contents/MacOS/e2e-control"], capture_output=True)
 
     def advancing(self):
         first = self.state().get("engineTime", 0)
@@ -143,7 +154,7 @@ class Run:
         return first != second
 
     def go_to_desktop(self):
-        self.control("activate", "com.apple.finder")
+        subprocess.run(["open", "-a", "Finder"], capture_output=True)
 
     # --- Media ---
 
@@ -168,7 +179,16 @@ def main():
     parser.add_argument("--artifacts")
     options = parser.parse_args()
 
+    CONTROL.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["swiftc", "-O", "-swift-version", "5", str(ROOT / "scripts/e2e/control.swift"), "-o", str(CONTROL)], check=True)
+    (CONTROL_APP / "Contents/Info.plist").write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.markoderic.lull.e2e-control</string>
+<key>CFBundleExecutable</key><string>e2e-control</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>
+""")
+    subprocess.run(["codesign", "--force", "--sign", "-", str(CONTROL_APP)], capture_output=True)
     subprocess.run([str(ROOT / "scripts/build-app.sh"), "debug"], check=True, stdout=subprocess.DEVNULL)
 
     run = Run(options.artifacts)
@@ -177,20 +197,33 @@ def main():
     try:
         scenario(run, media, options.media)
     finally:
+        run.end_covers()
         run.quit()
         run.control("show-apps", run.hidden_list)
         subprocess.run(["defaults", "delete", run.defaults], capture_output=True)
+        if (run.tmp / "cover.log").exists():
+            shutil.copy(run.tmp / "cover.log", run.artifacts / "cover.log")
         shutil.rmtree(run.tmp, ignore_errors=True)
 
     print(f"\n{run.passed} passed, {len(run.failures)} failed")
     for failure in run.failures:
         print(f"  failed: {failure}")
+    if (run.artifacts / "cover.log").exists():
+        print((run.artifacts / "cover.log").read_text()[:800])
     sys.exit(1 if run.failures else 0)
 
 
 def scenario(run, media, extra_media):
     run.section("Empty start")
     run.launch()
+    run.send("panel open")
+    run.wait("panel opens with nothing in the library", lambda s: s["panelOpen"])
+    run.send("appearance dark")
+    time.sleep(0.4)
+    run.send(f"snapshot {run.artifacts / 'panel-empty-dark.png'}")
+    time.sleep(0.2)
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
     state = run.state()
     run.check("no windows before there's a wallpaper", state["engineWindows"] == 0)
     run.check("no player before there's a wallpaper", not state["enginePlayerLoaded"])
@@ -230,9 +263,9 @@ def scenario(run, media, extra_media):
     time.sleep(1)
     run.check("time doesn't advance while paused", run.state()["engineTime"] == paused_at)
     usage = run.cpu_percent()
-    run.check("paused CPU is effectively zero", usage["app"] + usage["decoder"] < 0.5, str(usage))
+    run.check("paused CPU is effectively zero", usage["app"] + usage["decoder"] < 1, str(usage))
     print(f"        paused: {usage}, app footprint {run.footprint_mb():.1f} MB")
-    focus.kill()
+    run.end_covers()
     run.go_to_desktop()
     state = run.wait("returning to the desktop resumes it", lambda s: s["engineWantsPlaying"] and s["enginePlayerRate"] > 0)
     run.check("it resumes from where it stopped", abs(state["engineTime"] - paused_at) < 1.0, f"{paused_at} then {state['engineTime']}")
@@ -253,10 +286,13 @@ def scenario(run, media, extra_media):
 
     run.section("Whenever Visible")
     run.send("rule visible")
-    focus = run.cover("focus", 4)
+    # When an app quits, macOS hands focus back a moment later, which can undo a launch made too soon.
     time.sleep(1.5)
+    focus = run.cover("focus", 5)
+    state = run.wait("the test window takes focus", lambda s: not s["finderFront"])
+    time.sleep(0.5)
     state = run.state()
-    run.check("another app having focus doesn't pause it", not state["finderFront"] and state["engineWantsPlaying"], str(state))
+    run.check("another app having focus doesn't pause it", state["engineWantsPlaying"] and state["enginePlayerRate"] > 0, str(state))
     run.check("status line follows the rule", state["status"] == "Plays when the desktop is visible", state["status"])
     focus.wait()
     full = run.cover("fullscreen", 6)
@@ -268,17 +304,33 @@ def scenario(run, media, extra_media):
     run.wait("back on Desktop Focus and playing", lambda s: s["rule"] == "desktopFocus" and s["engineWantsPlaying"])
 
     run.section("Panel")
-    focus = run.cover("focus", 6)
+    time.sleep(1.5)
+    focus = run.cover("focus", 60)
     run.wait("paused before opening the panel", lambda s: not s["engineWantsPlaying"])
     run.send("panel open")
     run.wait("opening the panel plays it, so the preview is live", lambda s: s["panelOpen"] and s["engineWantsPlaying"])
-    time.sleep(0.8)
-    run.send(f"snapshot {run.artifacts / 'panel-animated.png'}")
-    time.sleep(0.3)
-    run.check("panel renders", (run.artifacts / "panel-animated.png").exists())
+    run.wait("the preview shows the video", lambda s: s["previewReady"] and s["enginePlayerRate"] > 0)
+    time.sleep(0.5)
+    for appearance in ("dark", "light"):
+        run.send(f"appearance {appearance}")
+        time.sleep(0.4)
+        run.send(f"snapshot {run.artifacts / f'panel-animated-{appearance}.png'}")
+        time.sleep(0.3)
+    run.check("panel renders", (run.artifacts / "panel-animated-dark.png").exists())
+    run.send("smooth on")
+    run.wait("Smooth Motion finishes while the panel is open", lambda s: s["smoothMotion"] and not s["versionWorking"], timeout=60)
+    time.sleep(0.4)
+    run.send(f"snapshot {run.artifacts / 'panel-smooth-light.png'}")
+    time.sleep(0.2)
+    run.send("appearance dark")
+    time.sleep(0.4)
+    run.send(f"snapshot {run.artifacts / 'panel-smooth-dark.png'}")
+    time.sleep(0.2)
+    run.send("smooth off")
+    run.wait("Smooth Motion off", lambda s: not s["smoothMotion"])
     run.send("panel close")
     run.wait("closing the panel goes back to the rule", lambda s: not s["panelOpen"] and not s["engineWantsPlaying"])
-    focus.kill()
+    run.end_covers()
     run.go_to_desktop()
     run.wait("desktop focus plays again", lambda s: s["engineWantsPlaying"])
 
@@ -294,13 +346,34 @@ def scenario(run, media, extra_media):
     run.check("the wallpaper is still playing after the panel closes", state["engineWantsPlaying"] and state["enginePlayerRate"] > 0, str(state))
     run.check("the desktop window survived hiding the app", state["engineWindows"] >= 1 and "layer=" in run.control("windows", run.process.pid))
 
+    run.section("Panel memory")
+    run.send("panel open")
+    run.wait("panel opens", lambda s: s["panelOpen"])
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+    time.sleep(1)
+    before = run.footprint_mb()
+    for _ in range(15):
+        run.send("panel open")
+        run.wait("", lambda s: s["panelOpen"], report=False)
+        time.sleep(0.15)
+        run.send("panel close")
+        run.wait("", lambda s: not s["panelOpen"], report=False)
+        time.sleep(0.15)
+    time.sleep(2)
+    after = run.footprint_mb()
+    print(f"        footprint before {before:.1f} MB, after 15 opens {after:.1f} MB")
+    run.check("opening and closing the panel doesn't leak", after - before < 6, f"{before} then {after}")
+    run.go_to_desktop()
+
     run.section("Still or Animated")
     run.send("mode still")
     state = run.wait("switching to Still stops the player", lambda s: s["mode"] == "still" and not s["enginePlayerLoaded"] and not s["engineWantsPlaying"])
     run.check("status line says still", state["status"] == "Still wallpaper")
     run.check("it freezes on the frame that was showing", 0 <= state["stillFrame"] < state["frameCount"], str(state))
     usage = run.cpu_percent()
-    run.check("a still wallpaper costs effectively nothing", usage["app"] + usage["decoder"] < 0.5, str(usage))
+    # Debug builds write their state to disk four times a second. Release builds are measured separately.
+    run.check("a still wallpaper costs effectively nothing", usage["app"] + usage["decoder"] < 1, str(usage))
     print(f"        still wallpaper: {usage}, app footprint {run.footprint_mb():.1f} MB")
     run.send("panel open")
     run.wait("panel opens on a still wallpaper", lambda s: s["panelOpen"])
@@ -313,6 +386,12 @@ def scenario(run, media, extra_media):
     time.sleep(0.5)
     run.send(f"snapshot {run.artifacts / 'panel-still.png'}")
     time.sleep(0.3)
+    run.send("appearance light")
+    time.sleep(0.4)
+    run.send(f"snapshot {run.artifacts / 'panel-still-light.png'}")
+    time.sleep(0.2)
+    run.send("appearance dark")
+    time.sleep(0.2)
     run.send("panel close")
     run.wait("panel closes", lambda s: not s["panelOpen"])
     run.send("mode animated")
@@ -365,6 +444,21 @@ def scenario(run, media, extra_media):
     run.wait("a missing prepared file is rebuilt from the original", lambda s: s["currentName"] == "chart" and s["enginePlayerRate"] > 0 and not s["versionWorking"], timeout=30)
     run.check("the file is back", (current_folder / "prepared.mp4").exists())
 
+    run.quit()
+    size_before = (current_folder / "prepared.mp4").stat().st_size
+    (current_folder / "prepared.mp4").write_bytes(b"this is not a video" * 100)
+    run.launch()
+    run.wait("a damaged prepared file is rebuilt from the original", lambda s: s["currentName"] == "chart" and s["enginePlayerRate"] > 0 and not s["versionWorking"], timeout=30)
+    time.sleep(0.5)
+    run.check("the rebuilt file is a real video", abs((current_folder / "prepared.mp4").stat().st_size - size_before) < size_before * 0.5, str((current_folder / "prepared.mp4").stat().st_size))
+
+    run.quit()
+    (current_folder / "still.png").unlink()
+    run.launch()
+    run.wait("a missing still frame is remade", lambda s: s["currentName"] == "chart", timeout=10)
+    time.sleep(1.5)
+    run.check("the still file is back", (current_folder / "still.png").exists())
+
     other_folder = next(p for p in (run.library).iterdir() if not (p / "original.gif").exists() and p.is_dir())
     run.quit()
     (other_folder / "prepared.mp4").unlink()
@@ -388,7 +482,8 @@ def scenario(run, media, extra_media):
             run.wait(f"plays {file.name}", lambda s: s["enginePlayerRate"] > 0, timeout=5)
             time.sleep(0.5)
             run.send("smooth on")
-            run.wait(f"Smooth Motion finishes on {file.name}", lambda s: not s["versionWorking"] and s["enginePlayerRate"] > 0, timeout=300)
+            run.wait(f"Smooth Motion finishes on {file.name}", lambda s: not s["versionWorking"] and s["playbackFile"].startswith("smooth-"), timeout=300)
+            run.go_to_desktop()
             run.send("smooth off")
 
     run.section("Deleting")

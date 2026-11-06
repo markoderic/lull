@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Runs background work one job at a time at low priority, so imports never fight each other.
 @MainActor
@@ -39,6 +40,9 @@ public final class JobQueue {
         let job = pending.removeFirst()
         let task = Task(priority: .utility) { @MainActor [weak self] in
             await job.work()
+            // Importing and frame generation use a lot of memory briefly. Give it back right away
+            // rather than holding it for as long as the wallpaper keeps running.
+            malloc_zone_pressure_relief(nil, 0)
             self?.running = nil
             self?.startNextIfIdle()
         }

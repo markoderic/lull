@@ -84,9 +84,10 @@ final class AppModel {
 
         engine.onPlaybackFailed = { [weak self] in self?.handlePlaybackFailure() }
         monitor = PlaybackMonitor(rule: pauseRule) { [weak self] decision in
-            guard let self else { return }
-            self.engine.setPlaying(decision == .play)
-            if let inputs = self.monitor?.inputs { self.inputs = inputs }
+            self?.engine.setPlaying(decision == .play)
+        }
+        monitor?.onInputsChange = { [weak self] inputs in
+            if self?.inputs != inputs { self?.inputs = inputs }
         }
         inputs = monitor?.inputs ?? inputs
 
@@ -169,6 +170,10 @@ final class AppModel {
             return
         }
         let still = ImageFiles.read(store.url(WallpaperFile.still, in: info.id))
+        if still == nil {
+            // The saved still is gone. Remake it rather than leaving a black screen.
+            showStillFrame(of: info, commit: true) { [weak self] image in self?.engine.updateStill(image) }
+        }
         if info.mode == .still || info.isStillOnly {
             engine.present(still: still, video: nil, startTime: 0, fade: fade)
             monitor?.setAnimated(false)
@@ -181,8 +186,12 @@ final class AppModel {
         makeMissingVersionIfNeeded(for: info)
     }
 
+    /// Reads the monitor's latest view of the system. A new wallpaper also needs telling whether to
+    /// play, because the monitor only reports when its decision changes.
     private func syncInputs() {
-        if let inputs = monitor?.inputs { self.inputs = inputs }
+        guard let inputs = monitor?.inputs else { return }
+        self.inputs = inputs
+        engine.setPlaying(PauseRule.decide(inputs) == .play)
     }
 
     /// The wanted version if it exists, otherwise the base file while the wanted one is made.
@@ -252,6 +261,7 @@ final class AppModel {
         info.stillFrame = frame
         replaceInMemory(info)
         if commit {
+            scrubTarget = nil
             save(info)
             showStillFrame(of: info, commit: true) { [weak self] image in self?.engine.updateStill(image) }
             return
@@ -265,7 +275,9 @@ final class AppModel {
     private func runScrub() async {
         while let frame = scrubTarget, let info = current {
             scrubTarget = nil
-            if let image = try? await importer.image(for: info, frame: frame), info.id == currentID, info.mode == .still {
+            let image = try? await importer.image(for: info, frame: frame)
+            // A later drag or the end of the drag may have moved on while this frame decoded.
+            if let image, let latest = current, latest.id == info.id, latest.mode == .still, latest.stillFrame == frame {
                 engine.updateStill(image)
             }
         }
