@@ -216,6 +216,8 @@ def main():
 def scenario(run, media, extra_media):
     run.section("Empty start")
     run.launch()
+    # The menu bar icon takes a moment to appear, and a person can't click it before then either.
+    time.sleep(1)
     run.send("panel open")
     run.wait("panel opens with nothing in the library", lambda s: s["panelOpen"])
     run.send("appearance dark")
