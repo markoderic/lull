@@ -8,8 +8,11 @@ import Foundation
 public enum SmoothMotion {
     public static var isAvailable: Bool { VTFrameRateConversionConfiguration.isSupported }
 
-    /// Long-held frames can need hundreds of outputs, so they're generated in small batches.
-    private static let batchSize = 16
+    /// Long-held frames can need hundreds of outputs, so they're generated in batches. Each frame
+    /// costs 12 bytes per pixel in flight, so larger frames get smaller batches.
+    static func batchSize(width: Int, height: Int) -> Int {
+        min(16, max(2, 17_000_000 / max(width * height, 1)))
+    }
 
     static func generate(
         from source: FrameSource,
@@ -54,6 +57,7 @@ public enum SmoothMotion {
             return output
         }
 
+        let batchSize = batchSize(width: source.width, height: source.height)
         let total = FrameTiming.outputFrameCount(duration: source.duration, fps: fps)
         guard var current = try source.nextFrame() else { throw ImportError.cantOpen }
         let firstFloat = try convert(current.buffer, using: sourcePool)

@@ -27,6 +27,8 @@ final class WallpaperEngine {
     private var stillGenerator: AVAssetImageGenerator?
 
     private var videoURL: URL?
+    /// The file `player` was built for, which `videoURL` can move on from while paused.
+    private var loadedURL: URL?
     private var savedTime = CMTime.zero
     private var lastStill: CGImage?
     private var hasContent = false
@@ -86,17 +88,23 @@ final class WallpaperEngine {
     /// Swaps to another version of the same wallpaper, keeping its place. They share a timeline.
     func replaceVideo(with url: URL) {
         guard url != videoURL else { return }
+        // A fade in progress loads whatever is current when it ends, from the place it was given.
+        if isFading {
+            videoURL = url
+            return
+        }
         let seconds = currentTime
         let time = CMTime(seconds: seconds, preferredTimescale: 600_000)
-        presentGeneration += 1
-        captureGeneration += 1
-        let generation = presentGeneration
-        guard let player, let oldURL = videoURL, wantsPlaying else {
-            unload()
+        guard wantsPlaying, let player, let oldURL = videoURL else {
+            // Nothing visible depends on the new file yet. A pause still in progress finishes with
+            // the old file, which shows the same frame, and the next resume loads this one.
             videoURL = url
             savedTime = time
             return
         }
+        presentGeneration += 1
+        captureGeneration += 1
+        let generation = presentGeneration
         player.pause()
         captureStill(from: oldURL, at: seconds) { [weak self] image in
             guard let self, generation == self.presentGeneration else { return }
@@ -151,11 +159,12 @@ final class WallpaperEngine {
     }
 
     private func resume() {
-        if let player {
+        if let player, loadedURL == videoURL {
             player.play()
             lastStill = nil
             surfaces.forEach { $0.setStill(nil, fade: false) }
         } else {
+            unload()
             buildPlayer()
         }
     }
@@ -164,11 +173,13 @@ final class WallpaperEngine {
     private func pauseAndUnload() {
         guard let player, let url = videoURL else { return }
         player.pause()
+        // Before its item loads, a player has no valid time. The place it was given is still right.
         let time = player.currentTime()
-        savedTime = time
+        if time.isNumeric { savedTime = time }
         let generation = captureGeneration
-        captureStill(from: url, at: time.seconds) { [weak self] image in
+        captureStill(from: url, at: savedTime.seconds) { [weak self] image in
             guard let self, generation == self.captureGeneration, !self.wantsPlaying else { return }
+            // With no frame to show, the paused player stays up. That beats a black desktop.
             guard let image else { return }
             self.lastStill = image
             self.surfaces.forEach { $0.setStill(image, fade: false) }
@@ -203,6 +214,7 @@ final class WallpaperEngine {
         }
         player = newPlayer
         looper = newLooper
+        loadedURL = url
         seekFinished = false
         surfaces.forEach { $0.attach(newPlayer) }
         startWhenItemExists(newPlayer, at: savedTime, attemptsLeft: 200)
@@ -245,6 +257,7 @@ final class WallpaperEngine {
         surfaces.forEach { $0.attach(nil) }
         looper = nil
         player = nil
+        loadedURL = nil
         stillGenerator = nil
         seekFinished = false
     }
@@ -308,5 +321,6 @@ final class WallpaperEngine {
     var debugPlayerRate: Float? { player?.rate }
     /// Whether the panel's preview has video it can show.
     var debugPreviewReady: Bool { previews.contains { $0.isReadyForDisplay } }
+    var debugStillVisible: Bool { windows.first?.surface.hasStill ?? false }
     #endif
 }

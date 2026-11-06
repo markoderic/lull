@@ -39,6 +39,9 @@ final class AppModel {
     @ObservationIgnored private var isScrubbing = false
     @ObservationIgnored private var messageTask: Task<Void, Never>?
     @ObservationIgnored private var retriedPlayback: Set<UUID> = []
+    /// Which job owns each wallpaper's progress. A cancelled job finishes after its replacement has
+    /// started, so finishing must only clear the progress if it still belongs to that job.
+    @ObservationIgnored private var versionWorkOwners: [UUID: UUID] = [:]
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
 
     init(store: WallpaperStore = WallpaperStore(), settings: AppSettings = AppSettings()) {
@@ -212,26 +215,46 @@ final class AppModel {
             return
         }
         let importer = self.importer
-        let report = progressReporter { $0.setVersionProgress(info.id, $1) }
-        versionProgress[info.id] = 0
+        let owner = beginVersionWork(on: info.id)
+        let report = progressReporter { $0.setVersionProgress(info.id, $1, owner: owner) }
         jobs.enqueue(id: info.id, onCancelledBeforeStart: { [weak self] in
-            self?.versionProgress[info.id] = nil
+            self?.endVersionWork(on: info.id, owner: owner)
         }) { [weak self] in
             do {
                 let rebuilt = try await importer.rebuildPrepared(info, progress: report)
-                self?.versionProgress[info.id] = nil
+                guard self?.endVersionWork(on: info.id, owner: owner) == true else { return }
                 if self?.currentID == rebuilt.id { self?.apply(rebuilt, fade: false) }
             } catch is CancellationError {
-                self?.versionProgress[info.id] = nil
+                self?.endVersionWork(on: info.id, owner: owner)
             } catch {
-                self?.versionProgress[info.id] = nil
+                guard self?.endVersionWork(on: info.id, owner: owner) == true else { return }
                 self?.show(message: ImportError.classify(error).message)
             }
         }
     }
 
-    private func setVersionProgress(_ id: UUID, _ progress: Double) {
-        guard versionProgress[id] != nil else { return }
+    private func beginVersionWork(on id: UUID) -> UUID {
+        let owner = UUID()
+        versionWorkOwners[id] = owner
+        versionProgress[id] = 0
+        return owner
+    }
+
+    /// Returns whether this job still owned the work, which means its result still matters.
+    @discardableResult
+    private func endVersionWork(on id: UUID, owner: UUID) -> Bool {
+        guard versionWorkOwners[id] == owner else { return false }
+        clearVersionWork(on: id)
+        return true
+    }
+
+    private func clearVersionWork(on id: UUID) {
+        versionWorkOwners[id] = nil
+        versionProgress[id] = nil
+    }
+
+    private func setVersionProgress(_ id: UUID, _ progress: Double, owner: UUID) {
+        guard versionWorkOwners[id] == owner else { return }
         versionProgress[id] = progress
     }
 
@@ -246,6 +269,8 @@ final class AppModel {
             monitor?.setAnimated(false)
             syncInputs()
             showStillFrame(of: info, commit: true) { [weak self] image in
+                // The frame takes a moment to decode, and the person may have switched back.
+                guard self?.current?.mode == .still else { return }
                 self?.engine.present(still: image, video: nil, startTime: 0, fade: false)
             }
         } else {
@@ -263,7 +288,10 @@ final class AppModel {
         if commit {
             scrubTarget = nil
             save(info)
-            showStillFrame(of: info, commit: true) { [weak self] image in self?.engine.updateStill(image) }
+            showStillFrame(of: info, commit: true) { [weak self] image in
+                guard self?.current?.mode == .still else { return }
+                self?.engine.updateStill(image)
+            }
             return
         }
         scrubTarget = frame
@@ -308,7 +336,7 @@ final class AppModel {
             if !rates.contains(info.smoothRate) { info.smoothRate = highest }
         } else {
             jobs.cancel(id: info.id)
-            versionProgress[info.id] = nil
+            clearVersionWork(on: info.id)
         }
         save(info)
         settleVersion(info)
@@ -317,7 +345,7 @@ final class AppModel {
     func setSmoothRate(_ rate: Int) {
         guard var info = current, info.smoothRate != rate else { return }
         jobs.cancel(id: info.id)
-        versionProgress[info.id] = nil
+        clearVersionWork(on: info.id)
         info.smoothRate = rate
         save(info)
         settleVersion(info)
@@ -326,7 +354,7 @@ final class AppModel {
     func setFrameLimit(_ limit: Int?) {
         guard var info = current, info.frameLimit != limit else { return }
         jobs.cancel(id: info.id)
-        versionProgress[info.id] = nil
+        clearVersionWork(on: info.id)
         info.frameLimit = limit
         save(info)
         settleVersion(info)
@@ -345,10 +373,10 @@ final class AppModel {
         guard !store.fileExists(info.playbackFilename, in: info.id), versionProgress[info.id] == nil else { return }
         let filename = info.playbackFilename
         let importer = self.importer
-        versionProgress[info.id] = 0
-        let report = progressReporter { $0.setVersionProgress(info.id, $1) }
+        let owner = beginVersionWork(on: info.id)
+        let report = progressReporter { $0.setVersionProgress(info.id, $1, owner: owner) }
         jobs.enqueue(id: info.id, onCancelledBeforeStart: { [weak self] in
-            self?.versionProgress[info.id] = nil
+            self?.endVersionWork(on: info.id, owner: owner)
         }) { [weak self] in
             do {
                 if info.smoothMotion {
@@ -356,12 +384,12 @@ final class AppModel {
                 } else if let limit = info.frameLimit {
                     try await importer.makeLimitedVersion(of: info, limit: limit, progress: report)
                 }
-                self?.versionProgress[info.id] = nil
+                guard self?.endVersionWork(on: info.id, owner: owner) == true else { return }
                 self?.versionFinished(filename, for: info.id)
             } catch is CancellationError {
-                self?.versionProgress[info.id] = nil
+                self?.endVersionWork(on: info.id, owner: owner)
             } catch {
-                self?.versionProgress[info.id] = nil
+                guard self?.endVersionWork(on: info.id, owner: owner) == true else { return }
                 self?.versionFailed(info.id, error: error)
             }
         }
@@ -394,7 +422,7 @@ final class AppModel {
     /// Stops making a Smooth Motion or frame limit version, and turns that setting back off.
     func cancelVersion(_ id: UUID) {
         jobs.cancel(id: id)
-        versionProgress[id] = nil
+        clearVersionWork(on: id)
         guard var info = wallpapers.first(where: { $0.id == id }) else { return }
         info.smoothMotion = false
         info.frameLimit = nil
@@ -412,7 +440,7 @@ final class AppModel {
         wallpapers.removeAll { $0.id == id }
         missingIDs.remove(id)
         thumbnails[id] = nil
-        versionProgress[id] = nil
+        clearVersionWork(on: id)
         if id == currentID {
             currentID = nil
             settings.currentWallpaperID = nil

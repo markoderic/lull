@@ -169,6 +169,7 @@ class Run:
         source = "testsrc2=s=320x180:r=15:d=3"
         run("-f", "lavfi", "-i", source, "-vf", "split[a][b];[a]palettegen[p];[b][p]paletteuse", str(media / "chart.gif"))
         run("-f", "lavfi", "-i", "testsrc2=s=1280x720:r=120:d=3", "-c:v", "hevc_videotoolbox", "-b:v", "12M", "-tag:v", "hvc1", "-an", str(media / "fast.mp4"))
+        run("-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=8", "-vf", "split[a][b];[a]palettegen[p];[b][p]paletteuse", str(media / "long.gif"))
         (media / "broken.gif").write_text("this is not a gif")
         return media
 
@@ -177,6 +178,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--media")
     parser.add_argument("--artifacts")
+    parser.add_argument("--races-only", action="store_true")
     options = parser.parse_args()
 
     CONTROL.parent.mkdir(parents=True, exist_ok=True)
@@ -195,7 +197,10 @@ def main():
     media = run.make_media()
     run.control("hide-apps", run.hidden_list)
     try:
-        scenario(run, media, options.media)
+        if not options.races_only:
+            scenario(run, media, options.media)
+            run.quit()
+        races(run, media)
     finally:
         run.end_covers()
         run.quit()
@@ -211,6 +216,72 @@ def main():
     if (run.artifacts / "cover.log").exists():
         print((run.artifacts / "cover.log").read_text()[:800])
     sys.exit(1 if run.failures else 0)
+
+
+def races(run, media):
+    """Timing that a person could hit by chance, forced by running commands back to back."""
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.go_to_desktop()
+    run.launch()
+    time.sleep(1)
+    run.send(f"import {media / 'chart.gif'}")
+    run.wait("first wallpaper imported", lambda s: s["wallpaperCount"] == 1, timeout=30)
+    run.send(f"import {media / 'long.gif'}")
+    run.wait("second wallpaper imported", lambda s: s["wallpaperCount"] == 2 and s["pendingImports"] == 0, timeout=60)
+    run.send("select 0")
+    run.wait("first wallpaper selected", lambda s: s["currentName"] == "chart")
+    run.send("smooth on")
+    run.wait("Smooth Motion ready", lambda s: s["playbackFile"] == "smooth-120.mp4" and not s["versionWorking"], timeout=60)
+    run.send("rate 60")
+    run.wait("second rate ready", lambda s: s["playbackFile"] == "smooth-60.mp4" and not s["versionWorking"], timeout=60)
+    run.send("smooth off")
+    run.wait("Smooth Motion off", lambda s: not s["smoothMotion"])
+    run.send("select 1")
+    run.wait("other wallpaper playing", lambda s: s["currentName"] == "long" and s["enginePlayerRate"] > 0)
+
+    run.section("Changing versions during a crossfade")
+    run.send("batch select 0; smooth on")
+    run.wait("the new version plays after the fade", lambda s: s["playbackFile"] == "smooth-60.mp4" and s["enginePlayerRate"] > 0)
+    time.sleep(2.5)
+    run.cover("focus", 20)
+    run.wait("pausing still works afterwards", lambda s: not s["finderFront"] and not s["engineWantsPlaying"] and not s["enginePlayerLoaded"])
+    run.end_covers()
+    run.go_to_desktop()
+    run.wait("and so does resuming", lambda s: s["finderFront"] and s["enginePlayerRate"] > 0)
+
+    run.section("Changing versions while pausing")
+    run.send("batch engine off; smooth off")
+    run.wait("a still frame stays up instead of a black screen", lambda s: s["playbackFile"] == "prepared.mp4" and s["engineStillVisible"] and not s["enginePlayerLoaded"])
+    run.send("engine on")
+    run.wait("resuming plays the new version", lambda s: s["enginePlayerRate"] > 0 and not s["engineStillVisible"])
+
+    run.section("Quickly switching Still and Animated")
+    run.send("batch mode still; mode animated")
+    time.sleep(1.5)
+    run.wait("it ends up animated and playing", lambda s: s["mode"] == "animated" and s["enginePlayerRate"] > 0, timeout=3)
+
+    run.section("Pausing before the player has loaded")
+    run.send("mode still")
+    run.wait("still", lambda s: not s["enginePlayerLoaded"])
+    time.sleep(0.5)
+    run.send("batch mode animated; engine off")
+    time.sleep(1)
+    run.check("the app survives", run.process.poll() is None)
+    state = run.state()
+    run.check("its place in the video is still valid", state["engineTime"] == state["engineTime"], str(state.get("engineTime")))
+    run.send("engine on")
+    run.wait("it can still play", lambda s: s["enginePlayerRate"] > 0)
+
+    run.section("Changing the rate during a job")
+    run.send("select 1")
+    run.wait("the longer wallpaper is selected", lambda s: s["currentName"] == "long")
+    run.send("batch smooth on; rate 60")
+    time.sleep(1)
+    run.check("progress stays visible for the new job", run.state()["versionWorking"], str(run.state()))
+    run.wait("the new rate finishes and takes over", lambda s: s["playbackFile"] == "smooth-60.mp4" and not s["versionWorking"], timeout=120)
+    folder = next(p for p in run.library.iterdir() if (p / "smooth-60.mp4").exists() and (p / "info.json").read_text().find('"long"') >= 0)
+    run.check("the abandoned rate leaves no file", not (folder / "smooth-120.mp4").exists())
+    run.check("and no partial file", not list(folder.glob("*.partial")))
 
 
 def scenario(run, media, extra_media):

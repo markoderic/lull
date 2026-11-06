@@ -59,6 +59,10 @@ final class DebugBridge {
         case "cancel":
             if let pending = model.pendingImports.first { model.cancelImport(pending.id) }
             else if let id = model.currentID { model.cancelVersion(id) }
+        case "batch":
+            // Runs commands back to back with no gap, to reach races a person could hit by chance.
+            argument.split(separator: ";").forEach { run($0.trimmingCharacters(in: .whitespaces)) }
+        case "engine": model.engine.setPlaying(argument == "on")
         case "snapshot": snapshot(to: argument)
         case "appearance":
             NSApp.appearance = NSAppearance(named: argument == "dark" ? .darkAqua : .aqua)
@@ -123,6 +127,7 @@ final class DebugBridge {
             "engineWantsPlaying": model.engine.wantsPlaying,
             "enginePlayerLoaded": model.engine.isPlayerLoaded,
             "previewReady": model.engine.debugPreviewReady,
+            "engineStillVisible": model.engine.debugStillVisible,
             "launchAtLogin": model.launchAtLogin,
             "enginePlayerRate": model.engine.playerRate,
             "engineTime": model.engine.currentTime,

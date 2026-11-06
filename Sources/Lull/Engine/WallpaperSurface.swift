@@ -34,6 +34,7 @@ final class WallpaperSurface {
     }
 
     var isReadyForDisplay: Bool { playerLayer.isReadyForDisplay }
+    var hasStill: Bool { stillLayer.contents != nil }
 
     func resize(to bounds: CGRect) {
         CATransaction.begin()

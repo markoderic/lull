@@ -319,6 +319,31 @@ struct FrameLimitTests {
     }
 }
 
+@Suite("Smooth Motion batches")
+struct SmoothMotionBatchTests {
+    @Test func smallFramesUseFullBatches() {
+        #expect(SmoothMotion.batchSize(width: 1280, height: 720) == 16)
+    }
+
+    @Test func highResolutionsUseSmallerBatches() {
+        #expect(SmoothMotion.batchSize(width: 1920, height: 1080) == 8)
+        #expect(SmoothMotion.batchSize(width: 3840, height: 2160) == 2)
+    }
+
+    @Test func peakMemoryStaysBoundedAtEverySize() {
+        for (width, height) in [(1280, 720), (1920, 1080), (2560, 1440), (3840, 2160), (5120, 2880)] {
+            let batch = SmoothMotion.batchSize(width: width, height: height)
+            // 8 bytes per pixel while generating, plus 4 for each frame sent to the encoder.
+            let bytes = batch * width * height * 12
+            #expect(bytes <= 450_000_000 || batch == 2, "\(width)x\(height) uses \(bytes) bytes")
+        }
+    }
+
+    @Test func neverDropsBelowTwoFrames() {
+        #expect(SmoothMotion.batchSize(width: 8192, height: 4320) == 2)
+    }
+}
+
 @Suite("Smooth Motion", .enabled(if: SmoothMotion.isAvailable))
 struct SmoothMotionTests {
     @Test func smoothVersionHasExpectedFrameCountAndRealContent() async throws {
