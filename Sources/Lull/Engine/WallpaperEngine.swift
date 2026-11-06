@@ -302,4 +302,9 @@ final class WallpaperEngine {
         preview.attach(nil)
         previews.removeAll { $0 === preview }
     }
+
+    #if DEBUG
+    var debugWindowCount: Int { windows.count }
+    var debugPlayerRate: Float? { player?.rate }
+    #endif
 }

@@ -379,6 +379,16 @@ final class AppModel {
         jobs.cancel(id: id)
     }
 
+    /// Stops making a Smooth Motion or frame limit version, and turns that setting back off.
+    func cancelVersion(_ id: UUID) {
+        jobs.cancel(id: id)
+        versionProgress[id] = nil
+        guard var info = wallpapers.first(where: { $0.id == id }) else { return }
+        info.smoothMotion = false
+        info.frameLimit = nil
+        save(info)
+    }
+
     func delete(_ id: UUID) {
         jobs.cancel(id: id)
         do {

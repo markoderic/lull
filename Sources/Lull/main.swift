@@ -1,2 +1,7 @@
-// Replaced by the real app entry point in the shell task.
-print("Lull")
+import AppKit
+
+let application = NSApplication.shared
+let delegate = AppDelegate()
+application.delegate = delegate
+application.setActivationPolicy(.accessory)
+application.run()
