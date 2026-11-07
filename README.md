@@ -35,6 +35,12 @@ Requires macOS 15.4 or later on Apple Silicon.
 2. Drag Lull to Applications and open it.
 3. Click the icon in your menu bar and add a GIF or video.
 
+Lull is signed with a Developer ID and notarized by Apple, which scans it for malware. The first time you open it, macOS shows its usual prompt for anything downloaded from the internet, and you can choose Open. To confirm you have the real file, compare it with the checksum published with each release:
+
+```bash
+shasum -a 256 ~/Downloads/Lull-1.0.0.dmg
+```
+
 ### Build from source
 
 ```bash

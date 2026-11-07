@@ -3,6 +3,7 @@
 #
 #   scripts/build-app.sh                  release build, ad-hoc signed, for running on this Mac
 #   scripts/build-app.sh debug            debug build with the automation bridge
+#   HARDENED=1 scripts/build-app.sh debug the same, under the security settings a signed release uses
 #   SIGN_IDENTITY="Developer ID Application: …" scripts/build-app.sh
 #                                         release build signed for distribution
 set -euo pipefail
@@ -27,7 +28,7 @@ xattr -cr "$BUNDLE"
 
 IDENTITY="${SIGN_IDENTITY:--}"
 if [ "$IDENTITY" = "-" ]; then
-    codesign --force --sign - "$BUNDLE"
+    codesign --force ${HARDENED:+--options runtime} --sign - "$BUNDLE"
 else
     # Hardened runtime and a secure timestamp are what notarization requires.
     codesign --force --options runtime --timestamp --sign "$IDENTITY" "$BUNDLE"

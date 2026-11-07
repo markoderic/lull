@@ -183,6 +183,7 @@ def main():
     parser.add_argument("--races-only", action="store_true")
     parser.add_argument("--panel-only", action="store_true")
     parser.add_argument("--schedule-only", action="store_true")
+    parser.add_argument("--hardened", action="store_true", help="test under the security settings a signed release uses")
     options = parser.parse_args()
 
     CONTROL.parent.mkdir(parents=True, exist_ok=True)
@@ -195,7 +196,10 @@ def main():
 </dict></plist>
 """)
     subprocess.run(["codesign", "--force", "--sign", "-", str(CONTROL_APP)], capture_output=True)
-    subprocess.run([str(ROOT / "scripts/build-app.sh"), "debug"], check=True, stdout=subprocess.DEVNULL)
+    build_env = dict(os.environ, HARDENED="1") if options.hardened else None
+    subprocess.run([str(ROOT / "scripts/build-app.sh"), "debug"], check=True, stdout=subprocess.DEVNULL, env=build_env)
+    signature = subprocess.run(["codesign", "-d", "--verbose=2", str(ROOT / "dist/debug/Lull.app")], capture_output=True, text=True).stderr
+    print(next((line for line in signature.splitlines() if "flags=" in line), "no signature found"))
 
     run = Run(options.artifacts)
     media = run.make_media()
