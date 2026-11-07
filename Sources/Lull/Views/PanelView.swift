@@ -23,7 +23,9 @@ struct PanelView: View {
                 } else if !current.isStillOnly {
                     StillControls(model: model, info: current)
                 }
-                FitControls(model: model, info: current)
+                if model.canFitCurrent || model.fitNote != nil {
+                    FitControls(model: model, info: current)
+                }
             } else {
                 emptyState
             }
@@ -38,6 +40,10 @@ struct PanelView: View {
 
             Divider()
             library
+            if model.canSchedule {
+                Divider()
+                ScheduleSection(model: model)
+            }
             footer
         }
         .padding(12)
@@ -65,6 +71,7 @@ struct PanelView: View {
             model.current?.mode.rawValue ?? "none",
             model.current?.smoothMotion.description ?? "",
             model.current?.fitSize?.width.description ?? "",
+            model.schedule.isOn.description,
             model.fitNote ?? "",
             model.message ?? "",
             "\(model.wallpapers.count + model.pendingImports.count)",
@@ -210,6 +217,75 @@ struct PanelView: View {
             .fixedSize()
             .accessibilityLabel("More options")
         }
+    }
+}
+
+/// Two wallpapers and the times they take over.
+private struct ScheduleSection: View {
+    let model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("Day and Night")
+                Spacer(minLength: 0)
+                Toggle("Day and Night", isOn: Binding(
+                    get: { model.schedule.isOn },
+                    set: { model.setScheduleOn($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+            .help("Changes between two wallpapers at the times you choose.")
+            if model.schedule.isOn {
+                row("Day", slot: .day, wallpaper: model.schedule.dayWallpaperID, time: model.schedule.dayStart)
+                row("Night", slot: .night, wallpaper: model.schedule.nightWallpaperID, time: model.schedule.nightStart)
+                if let caption = model.scheduleCaption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func row(_ title: String, slot: ScheduleSlot, wallpaper: UUID?, time: ClockTime) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 32, alignment: .leading)
+            Picker("\(title) wallpaper", selection: Binding(
+                get: { wallpaper },
+                set: { if let id = $0 { model.setScheduleWallpaper(id, for: slot) } }
+            )) {
+                ForEach(model.wallpapers) { info in
+                    Text(info.name).tag(UUID?.some(info.id))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            DatePicker("\(title) starts at", selection: Binding(
+                get: { Self.date(for: time) },
+                set: { model.setScheduleTime(Self.clockTime(from: $0), for: slot) }
+            ), displayedComponents: .hourAndMinute)
+            .datePickerStyle(.stepperField)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
+        }
+    }
+
+    private static func date(for time: ClockTime) -> Date {
+        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
+    }
+
+    private static func clockTime(from date: Date) -> ClockTime {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return ClockTime(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 }
 

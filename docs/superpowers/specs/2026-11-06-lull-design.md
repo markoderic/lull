@@ -86,6 +86,17 @@ Each wallpaper remembers its own mode and chosen frame.
 - The last frame interpolates into the first, so the loop point is smooth too.
 - **Frame limit** is a second control for videos at 59 FPS or above with Smooth Motion off: Original, 60 (only for sources over 61 FPS) and 30. It makes a version by dropping frames, without interpolation.
 
+### Day and Night
+
+An optional schedule, offered once the library has two wallpapers.
+
+- The person picks a day wallpaper, a night wallpaper and a start time for each, defaulting to 7 AM and 7 PM. Day may wrap past midnight, for someone who works nights.
+- At each start time the wallpaper crossfades to the other one, which keeps its own settings. It changes while paused too, with no decoding until the pause rule allows playing.
+- Between changes there's one timer and no polling. Waking from sleep, and clock or time zone changes, also trigger a check, because timers don't reliably count time during sleep.
+- The schedule remembers the latest change it acted on, rather than which slot it's in. A Mac asleep through both changes still catches up, and a wallpaper picked by hand stays until the next change, including across a relaunch.
+- Changing the plan applies it right away. Matching times turn it off with an explanation. Deleting a scheduled wallpaper turns it off and says why.
+- When clocks go forward a skipped time lands on the next valid one, and when they go back a repeated time only counts once.
+
 ### File size and Fit to Screen
 
 Wallpapers fill the screen, so a mismatched file is cropped or enlarged.

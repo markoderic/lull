@@ -21,6 +21,7 @@ final class AppModel {
     /// Progress of a version being made for a wallpaper, by wallpaper ID.
     private(set) var versionProgress: [UUID: Double] = [:]
     private(set) var pauseRule: PauseRuleMode
+    private(set) var schedule: DaySchedule
     private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
     private(set) var isPanelOpen = false
     private(set) var inputs = PlaybackInputs()
@@ -43,12 +44,14 @@ final class AppModel {
     /// started, so finishing must only clear the progress if it still belongs to that job.
     @ObservationIgnored private var versionWorkOwners: [UUID: UUID] = [:]
     @ObservationIgnored private var screenObserver: NSObjectProtocol?
+    @ObservationIgnored private var scheduleTimer: ScheduleTimer?
 
     init(store: WallpaperStore = WallpaperStore(), settings: AppSettings = AppSettings()) {
         self.store = store
         self.settings = settings
         importer = Importer(store: store)
         pauseRule = settings.pauseRule
+        schedule = settings.daySchedule
     }
 
     var current: WallpaperInfo? {
@@ -118,7 +121,11 @@ final class AppModel {
             }
         }
 
-        if let id = settings.currentWallpaperID, let info = wallpapers.first(where: { $0.id == id }) {
+        // A change may have passed while the app wasn't running, so this comes before restoring.
+        scheduleTimer = ScheduleTimer { [weak self] in self?.evaluateSchedule() }
+        evaluateSchedule()
+
+        if currentID == nil, let id = settings.currentWallpaperID, let info = wallpapers.first(where: { $0.id == id }) {
             currentID = id
             apply(info, fade: false)
         }
@@ -448,6 +455,68 @@ final class AppModel {
         show(message: ImportError.classify(error).message)
     }
 
+    // MARK: Day and Night
+
+    /// What the panel says will happen next.
+    var scheduleCaption: String? {
+        schedule.caption(now: Date(), calendar: .current, locale: .current)
+    }
+
+    /// Needs two wallpapers to choose between, but stays visible once on so it can be turned off.
+    var canSchedule: Bool { wallpapers.count >= 2 || schedule.isOn }
+
+    func setScheduleOn(_ on: Bool) {
+        var plan = schedule
+        plan.isOn = on
+        if on {
+            let ids = wallpapers.map(\.id)
+            if plan.dayWallpaperID.map(ids.contains) != true {
+                plan.dayWallpaperID = currentID ?? ids.first
+            }
+            if plan.nightWallpaperID.map(ids.contains) != true || plan.nightWallpaperID == plan.dayWallpaperID {
+                plan.nightWallpaperID = ids.first { $0 != plan.dayWallpaperID }
+            }
+            plan.lastAppliedChange = nil
+        }
+        updateSchedule(plan)
+    }
+
+    func setScheduleWallpaper(_ id: UUID, for slot: ScheduleSlot) {
+        var plan = schedule
+        if slot == .day { plan.dayWallpaperID = id } else { plan.nightWallpaperID = id }
+        // Changing the plan shows its result right away.
+        plan.lastAppliedChange = nil
+        updateSchedule(plan)
+    }
+
+    func setScheduleTime(_ time: ClockTime, for slot: ScheduleSlot) {
+        var plan = schedule
+        if slot == .day { plan.dayStart = time } else { plan.nightStart = time }
+        plan.lastAppliedChange = nil
+        updateSchedule(plan)
+    }
+
+    private func updateSchedule(_ plan: DaySchedule) {
+        schedule = plan
+        settings.daySchedule = plan
+        evaluateSchedule()
+    }
+
+    /// Acts on any change that has come due, then waits for the next one with a single timer.
+    private func evaluateSchedule(now: Date = Date()) {
+        let calendar = Calendar.current
+        guard schedule.isActive else {
+            scheduleTimer?.arm(at: nil)
+            return
+        }
+        if schedule.shouldApply(now: now, calendar: calendar) {
+            if let id = schedule.wallpaperID(for: schedule.slot(at: now, calendar: calendar)) { select(id) }
+            schedule.lastAppliedChange = schedule.mostRecentChange(atOrBefore: now, calendar: calendar)
+            settings.daySchedule = schedule
+        }
+        scheduleTimer?.arm(at: schedule.nextChange(after: now, calendar: calendar))
+    }
+
     // MARK: Removing
 
     func cancelImport(_ id: UUID) {
@@ -477,6 +546,10 @@ final class AppModel {
         missingIDs.remove(id)
         thumbnails[id] = nil
         clearVersionWork(on: id)
+        var plan = schedule
+        let turnedOff = plan.removeWallpaper(id)
+        if plan != schedule { updateSchedule(plan) }
+        if turnedOff { show(message: "Day and Night is off because one of its wallpapers was deleted.") }
         if id == currentID {
             currentID = nil
             settings.currentWallpaperID = nil

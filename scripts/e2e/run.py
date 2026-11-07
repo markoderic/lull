@@ -10,6 +10,7 @@ Hidden apps are restored at the end, including after a failure.
 DIR holds optional media: any GIF, MP4 or MOV in it is imported too, as a check on real files.
 """
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -181,6 +182,7 @@ def main():
     parser.add_argument("--artifacts")
     parser.add_argument("--races-only", action="store_true")
     parser.add_argument("--panel-only", action="store_true")
+    parser.add_argument("--schedule-only", action="store_true")
     options = parser.parse_args()
 
     CONTROL.parent.mkdir(parents=True, exist_ok=True)
@@ -197,9 +199,13 @@ def main():
 
     run = Run(options.artifacts)
     media = run.make_media()
-    run.control("hide-apps", run.hidden_list)
+    # The schedule checks only read state, so they leave open apps alone.
+    if not options.schedule_only:
+        run.control("hide-apps", run.hidden_list)
     try:
-        if options.panel_only:
+        if options.schedule_only:
+            day_and_night(run, media)
+        elif options.panel_only:
             panel_rules(run, media)
         else:
             if not options.races_only:
@@ -210,6 +216,8 @@ def main():
             panel_rules(run, media)
             run.quit()
             fit_to_screen(run, media)
+            run.quit()
+            day_and_night(run, media)
     finally:
         run.end_covers()
         run.quit()
@@ -225,6 +233,71 @@ def main():
     if (run.artifacts / "cover.log").exists():
         print((run.artifacts / "cover.log").read_text()[:800])
     sys.exit(1 if run.failures else 0)
+
+
+def day_and_night(run, media):
+    """Uses the real clock, so the wallpaper really does change by itself while this waits."""
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.launch()
+    time.sleep(1)
+    run.send(f"import {media / 'chart.gif'}")
+    state = run.wait("first wallpaper imported", lambda s: s["wallpaperCount"] == 1, timeout=30)
+    run.check("one wallpaper isn't enough to offer the schedule", not state["canSchedule"])
+    run.send(f"import {media / 'vertical.mp4'}")
+    state = run.wait("second wallpaper imported", lambda s: s["wallpaperCount"] == 2 and s["pendingImports"] == 0, timeout=30)
+    run.check("two wallpapers offer it", state["canSchedule"])
+
+    run.section("Turning it on")
+    now = datetime.datetime.now()
+    # At least 10 seconds away, so the switch can't happen before it's being watched for.
+    change = (now + datetime.timedelta(seconds=70)).replace(second=0, microsecond=0)
+    earlier = now - datetime.timedelta(hours=1)
+    run.send("schedule on")
+    run.send("schedule-wallpapers 0 1")
+    run.send(f"schedule-times {earlier:%H:%M} {change:%H:%M}")
+    state = run.wait("it puts on the day wallpaper right away", lambda s: s["scheduleActive"] and s["currentName"] == "chart")
+    run.check("it says when the next change is", state["scheduleCaption"].startswith("Changes to Night"), state["scheduleCaption"])
+    run.send("panel open")
+    run.wait("panel opens with the schedule showing", lambda s: s["panelOpen"])
+    run.send("appearance dark")
+    time.sleep(0.6)
+    run.send(f"snapshot {run.artifacts / 'panel-schedule-dark.png'}")
+    time.sleep(0.2)
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+
+    run.section("Waiting for the clock")
+    seconds = (change - datetime.datetime.now()).total_seconds()
+    print(f"        waiting about {seconds:.0f} seconds for {change:%H:%M}")
+    state = run.wait("the wallpaper changes by itself at the chosen time", lambda s: s["currentName"] == "vertical", timeout=seconds + 8)
+    run.check("the caption moves on", state["scheduleCaption"].startswith("Changes to Day"), state["scheduleCaption"])
+
+    run.section("Picking by hand")
+    run.send("select 0")
+    run.wait("a wallpaper can still be picked by hand", lambda s: s["currentName"] == "chart")
+    time.sleep(2.5)
+    run.check("the schedule doesn't undo it straight away", run.state()["currentName"] == "chart")
+    run.quit()
+    run.launch()
+    state = run.wait("it survives a relaunch", lambda s: s["scheduleActive"] and s["engineWindows"] >= 1)
+    run.check("and the hand-picked wallpaper stays until the next change", state["currentName"] == "chart", state["currentName"])
+
+    run.section("Changing the plan")
+    later = datetime.datetime.now() + datetime.timedelta(hours=2)
+    earlier = datetime.datetime.now() - datetime.timedelta(hours=1)
+    run.send(f"schedule-times {later:%H:%M} {earlier:%H:%M}")
+    run.wait("new times apply right away", lambda s: s["currentName"] == "vertical")
+    run.send(f"schedule-times {later:%H:%M} {later:%H:%M}")
+    state = run.wait("matching times are explained", lambda s: s["scheduleCaption"] == "Day and Night need different times.")
+    run.check("and nothing is scheduled", not state["scheduleActive"])
+    run.send(f"schedule-times {later:%H:%M} {earlier:%H:%M}")
+    run.wait("fixing the times turns it back on", lambda s: s["scheduleActive"])
+
+    run.section("Deleting a scheduled wallpaper")
+    run.send("delete 1")
+    state = run.wait("the schedule turns off", lambda s: s["wallpaperCount"] == 1 and not s["scheduleOn"])
+    run.check("and says why", "Day and Night is off" in state["message"], state["message"])
+    run.check("with no wallpapers to choose between, it's hidden", not state["canSchedule"])
 
 
 def fit_to_screen(run, media):

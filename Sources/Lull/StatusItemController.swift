@@ -52,7 +52,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         self.popover = popover
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        if let window = popover.contentViewController?.view.window {
+            window.makeKey()
+            // Otherwise the first editable field, a time in the schedule, grabs keyboard focus.
+            window.makeFirstResponder(nil)
+        }
         if popover.isShown {
             startWatchingForLeaving()
         } else {

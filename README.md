@@ -20,6 +20,7 @@ It's a 2 MB native app with no accounts, analytics or network use. Free and open
 - **Still or Animated.** Freeze any wallpaper and drag a slider to pick the exact frame. Your desktop updates as you drag.
 - **Smooth Motion.** Generates in-between frames for GIFs and videos, up to 120 FPS, using Apple's frame rate conversion. It runs once and the result is saved.
 - **Frame limits.** Lower a fast video to 60 or 30 FPS to save power.
+- **Day and Night.** Add two wallpapers, like a light and a dark version of the same scene, and choose the times they take over. Lull crossfades between them, and catches up if your Mac was asleep at the time.
 - **Sharp pixel art.** Small GIFs are enlarged before encoding so pixel art stays crisp.
 - **Fit to Screen.** Converts a file that doesn't match your screen, like a vertical video, to your exact resolution. The whole picture is centered, with a blurred copy of it filling the rest.
 - **Multiple displays.** One wallpaper across every screen, decoded once.
@@ -91,6 +92,8 @@ macOS has no public way to set an animated wallpaper, only still images. Lull pl
 
 GIF is a costly format to play directly, because it's decoded on the CPU. So Lull converts each file once, on import, to an efficient HEVC video, and from then on Apple's standard player runs it on the video hardware. One player feeds every display.
 
+Day and Night uses a single timer set for the next change, so it does no work in between.
+
 To decide when to play, Lull listens for system events such as focus changes, locking and sleep. It works out whether the desktop is covered from window positions, because `NSWindow.occlusionState` proved unreliable in testing. That check runs every 2 seconds, and only when its answer could change anything.
 
 The design and the evidence behind it are in [the design spec](docs/superpowers/specs/2026-11-06-lull-design.md).
@@ -109,6 +112,7 @@ Automated and hands-on checks ran on one Mac with one display. These haven't bee
 
 - More than one display
 - More than one Space
+- Day and Night across a real sleep and wake (the logic is tested, but not on a sleeping Mac)
 - macOS versions older than 27
 - Battery life and slower Macs
 

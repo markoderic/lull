@@ -50,6 +50,19 @@ final class DebugBridge {
         case "rate": model.setSmoothRate(Int(argument) ?? 120)
         case "limit": model.setFrameLimit(Int(argument))
         case "fit": model.setFitToScreen(argument == "on")
+        case "schedule": model.setScheduleOn(argument == "on")
+        case "schedule-wallpapers":
+            let indexes = argument.split(separator: " ").compactMap { Int($0) }
+            if indexes.count == 2, indexes.allSatisfy(model.wallpapers.indices.contains) {
+                model.setScheduleWallpaper(model.wallpapers[indexes[0]].id, for: .day)
+                model.setScheduleWallpaper(model.wallpapers[indexes[1]].id, for: .night)
+            }
+        case "schedule-times":
+            let times = argument.split(separator: " ").map { $0.split(separator: ":").compactMap { Int($0) } }
+            if times.count == 2, times.allSatisfy({ $0.count == 2 }) {
+                model.setScheduleTime(ClockTime(hour: times[0][0], minute: times[0][1]), for: .day)
+                model.setScheduleTime(ClockTime(hour: times[1][0], minute: times[1][1]), for: .night)
+            }
         case "rule": model.setPauseRule(argument == "visible" ? .wheneverVisible : .desktopFocus)
         case "panel":
             if argument == "open" { statusItem.open() } else { statusItem.close() }
@@ -129,6 +142,10 @@ final class DebugBridge {
             "enginePlayerLoaded": model.engine.isPlayerLoaded,
             "previewReady": model.engine.debugPreviewReady,
             "desktopMoving": model.engine.debugDesktopMoving,
+            "scheduleOn": model.schedule.isOn,
+            "scheduleActive": model.schedule.isActive,
+            "scheduleCaption": model.scheduleCaption ?? "",
+            "canSchedule": model.canSchedule,
             "fitNote": model.fitNote ?? "",
             "fitOn": current?.fitSize != nil,
             "canFit": model.canFitCurrent,

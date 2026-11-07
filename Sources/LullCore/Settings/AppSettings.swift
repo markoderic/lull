@@ -5,6 +5,7 @@ public final class AppSettings: @unchecked Sendable {
     private enum Key {
         static let pauseRule = "pauseRule"
         static let currentWallpaperID = "currentWallpaperID"
+        static let daySchedule = "daySchedule"
     }
 
     private let defaults: UserDefaults
@@ -16,6 +17,15 @@ public final class AppSettings: @unchecked Sendable {
     public var pauseRule: PauseRuleMode {
         get { defaults.string(forKey: Key.pauseRule).flatMap(PauseRuleMode.init(rawValue:)) ?? .desktopFocus }
         set { defaults.set(newValue.rawValue, forKey: Key.pauseRule) }
+    }
+
+    public var daySchedule: DaySchedule {
+        get {
+            guard let data = defaults.data(forKey: Key.daySchedule),
+                  let schedule = try? JSONDecoder().decode(DaySchedule.self, from: data) else { return DaySchedule() }
+            return schedule
+        }
+        set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Key.daySchedule) }
     }
 
     public var currentWallpaperID: UUID? {
