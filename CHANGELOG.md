@@ -9,5 +9,7 @@ First release.
 - Still or Animated per wallpaper, with a live frame slider
 - Smooth Motion up to 120 FPS, and frame limits for fast videos
 - Full unload while paused, with exact-frame resume
+- Fit to Screen, which converts any file to your screen's exact resolution without cropping it
+- Advice on the best file size for your screen
 - Library in the menu bar panel, with drag and drop
 - Launch at Login

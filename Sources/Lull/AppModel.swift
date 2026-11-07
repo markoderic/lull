@@ -66,6 +66,24 @@ final class AppModel {
 
     var isSmoothMotionSupported: Bool { SmoothMotion.isAvailable }
 
+    /// The main display's real resolution, which is what "the right size" means to a person.
+    var screenPixelSize: (width: Int, height: Int) {
+        guard let screen = NSScreen.main else { return (0, 0) }
+        return (Int(screen.frame.width * screen.backingScaleFactor), Int(screen.frame.height * screen.backingScaleFactor))
+    }
+
+    var bestSizeText: String? {
+        WallpaperFit.bestSizeText(screenWidth: screenPixelSize.width, screenHeight: screenPixelSize.height)
+    }
+
+    var fitNote: String? {
+        current.flatMap { WallpaperFit.note(for: $0, screenWidth: screenPixelSize.width, screenHeight: screenPixelSize.height) }
+    }
+
+    var canFitCurrent: Bool {
+        current.map { WallpaperFit.canFit($0, screenWidth: screenPixelSize.width, screenHeight: screenPixelSize.height) } ?? false
+    }
+
     /// What the panel's status line says.
     var statusText: String {
         guard let current else { return "" }
@@ -86,11 +104,8 @@ final class AppModel {
         refreshMissing()
 
         engine.onPlaybackFailed = { [weak self] in self?.handlePlaybackFailure() }
-        monitor = PlaybackMonitor(rule: pauseRule) { [weak self] decision in
-            self?.engine.setPlaying(decision == .play)
-        }
-        monitor?.onInputsChange = { [weak self] inputs in
-            if self?.inputs != inputs { self?.inputs = inputs }
+        monitor = PlaybackMonitor(rule: pauseRule) { [weak self] inputs in
+            self?.playbackInputsChanged(inputs)
         }
         inputs = monitor?.inputs ?? inputs
 
@@ -181,6 +196,7 @@ final class AppModel {
             engine.present(still: still, video: nil, startTime: 0, fade: fade)
             monitor?.setAnimated(false)
             syncInputs()
+            makeMissingVersionIfNeeded(for: info)
             return
         }
         engine.present(still: still, video: playableURL(for: info), startTime: info.time(forFrame: info.stillFrame), fade: fade)
@@ -189,21 +205,20 @@ final class AppModel {
         makeMissingVersionIfNeeded(for: info)
     }
 
-    /// Reads the monitor's latest view of the system. A new wallpaper also needs telling whether to
-    /// play, because the monitor only reports when its decision changes.
+    /// Reads the monitor's latest view of the system, for changes the app made itself.
     private func syncInputs() {
-        guard let inputs = monitor?.inputs else { return }
-        self.inputs = inputs
-        engine.setPlaying(PauseRule.decide(inputs) == .play)
+        if let inputs = monitor?.inputs { playbackInputsChanged(inputs) }
+    }
+
+    private func playbackInputsChanged(_ inputs: PlaybackInputs) {
+        if self.inputs != inputs { self.inputs = inputs }
+        engine.setPlayback(desktop: PauseRule.decide(inputs) == .play, preview: inputs.previewShouldPlay)
     }
 
     /// The wanted version if it exists, otherwise the base file while the wanted one is made.
     private func playableURL(for info: WallpaperInfo) -> URL {
-        if store.fileExists(info.playbackFilename, in: info.id) {
-            return store.url(info.playbackFilename, in: info.id)
-        }
-        if !info.smoothMotion, let limit = info.frameLimit, store.fileExists(WallpaperFile.limit(limit), in: info.id) {
-            return store.url(WallpaperFile.limit(limit), in: info.id)
+        for filename in [info.playbackFilename, info.baseFilename] where store.fileExists(filename, in: info.id) {
+            return store.url(filename, in: info.id)
         }
         return store.url(WallpaperFile.prepared, in: info.id)
     }
@@ -273,6 +288,7 @@ final class AppModel {
                 guard self?.current?.mode == .still else { return }
                 self?.engine.present(still: image, video: nil, startTime: 0, fade: false)
             }
+            makeMissingVersionIfNeeded(for: info)
         } else {
             save(info)
             apply(info, fade: false)
@@ -360,9 +376,29 @@ final class AppModel {
         settleVersion(info)
     }
 
+    /// Converts the wallpaper to this screen's exact resolution, or goes back to the original.
+    func setFitToScreen(_ on: Bool) {
+        guard var info = current else { return }
+        jobs.cancel(id: info.id)
+        clearVersionWork(on: info.id)
+        let screen = screenPixelSize
+        info.fitSize = on ? FitSize(screenWidth: screen.width, screenHeight: screen.height) : nil
+        save(info)
+        settleVersion(info)
+        if store.fileExists(info.baseFilename, in: info.id) { refreshStill(for: info) }
+    }
+
+    /// Keeps the saved still and thumbnail in step when the picture's framing changes.
+    private func refreshStill(for info: WallpaperInfo) {
+        showStillFrame(of: info, commit: true) { [weak self] image in
+            guard self?.current?.mode == .still else { return }
+            self?.engine.updateStill(image)
+        }
+    }
+
     /// Switches to the version the settings ask for, making it first if needed.
     private func settleVersion(_ info: WallpaperInfo) {
-        if store.fileExists(info.playbackFilename, in: info.id) {
+        if store.fileExists(info.wantedFilename, in: info.id) {
             if info.mode == .animated { engine.replaceVideo(with: store.url(info.playbackFilename, in: info.id)) }
         } else {
             makeMissingVersionIfNeeded(for: info)
@@ -370,8 +406,8 @@ final class AppModel {
     }
 
     private func makeMissingVersionIfNeeded(for info: WallpaperInfo) {
-        guard !store.fileExists(info.playbackFilename, in: info.id), versionProgress[info.id] == nil else { return }
-        let filename = info.playbackFilename
+        guard !store.fileExists(info.wantedFilename, in: info.id), versionProgress[info.id] == nil else { return }
+        let filename = info.wantedFilename
         let importer = self.importer
         let owner = beginVersionWork(on: info.id)
         let report = progressReporter { $0.setVersionProgress(info.id, $1, owner: owner) }
@@ -379,11 +415,7 @@ final class AppModel {
             self?.endVersionWork(on: info.id, owner: owner)
         }) { [weak self] in
             do {
-                if info.smoothMotion {
-                    try await importer.makeSmoothVersion(of: info, rate: info.smoothRate, progress: report)
-                } else if let limit = info.frameLimit {
-                    try await importer.makeLimitedVersion(of: info, limit: limit, progress: report)
-                }
+                try await importer.makeVersion(of: info, progress: report)
                 guard self?.endVersionWork(on: info.id, owner: owner) == true else { return }
                 self?.versionFinished(filename, for: info.id)
             } catch is CancellationError {
@@ -398,17 +430,20 @@ final class AppModel {
     private func versionFinished(_ filename: String, for id: UUID) {
         guard let info = wallpapers.first(where: { $0.id == id }) else { return }
         // The person may have changed their mind while it was being made.
-        if info.playbackFilename == filename, id == currentID, info.mode == .animated {
-            engine.replaceVideo(with: store.url(filename, in: id))
-        } else if info.playbackFilename != filename {
+        guard info.wantedFilename == filename else {
             makeMissingVersionIfNeeded(for: info)
+            return
         }
+        guard id == currentID else { return }
+        if info.mode == .animated { engine.replaceVideo(with: store.url(filename, in: id)) }
+        if info.fitSize != nil { refreshStill(for: info) }
     }
 
     private func versionFailed(_ id: UUID, error: Error) {
         guard var info = wallpapers.first(where: { $0.id == id }) else { return }
         info.smoothMotion = false
         info.frameLimit = nil
+        info.fitSize = nil
         save(info)
         show(message: ImportError.classify(error).message)
     }
@@ -426,6 +461,7 @@ final class AppModel {
         guard var info = wallpapers.first(where: { $0.id == id }) else { return }
         info.smoothMotion = false
         info.frameLimit = nil
+        info.fitSize = nil
         save(info)
     }
 
@@ -457,7 +493,7 @@ final class AppModel {
         // First failure: the file may be damaged, so rebuild it if there's an original, otherwise
         // try once more. Second failure: stop trying. The still frame stays on screen.
         guard retriedPlayback.insert(info.id).inserted else {
-            engine.setPlaying(false)
+            engine.setPlayback(desktop: false, preview: false)
             show(message: "This wallpaper can't play right now.")
             return
         }

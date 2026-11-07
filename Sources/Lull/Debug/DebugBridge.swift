@@ -49,6 +49,7 @@ final class DebugBridge {
         case "smooth": model.setSmoothMotion(argument == "on")
         case "rate": model.setSmoothRate(Int(argument) ?? 120)
         case "limit": model.setFrameLimit(Int(argument))
+        case "fit": model.setFitToScreen(argument == "on")
         case "rule": model.setPauseRule(argument == "visible" ? .wheneverVisible : .desktopFocus)
         case "panel":
             if argument == "open" { statusItem.open() } else { statusItem.close() }
@@ -62,7 +63,7 @@ final class DebugBridge {
         case "batch":
             // Runs commands back to back with no gap, to reach races a person could hit by chance.
             argument.split(separator: ";").forEach { run($0.trimmingCharacters(in: .whitespaces)) }
-        case "engine": model.engine.setPlaying(argument == "on")
+        case "engine": model.engine.setPlayback(desktop: argument == "on", preview: false)
         case "snapshot": snapshot(to: argument)
         case "appearance":
             NSApp.appearance = NSAppearance(named: argument == "dark" ? .darkAqua : .aqua)
@@ -127,6 +128,11 @@ final class DebugBridge {
             "engineWantsPlaying": model.engine.wantsPlaying,
             "enginePlayerLoaded": model.engine.isPlayerLoaded,
             "previewReady": model.engine.debugPreviewReady,
+            "desktopMoving": model.engine.debugDesktopMoving,
+            "fitNote": model.fitNote ?? "",
+            "fitOn": current?.fitSize != nil,
+            "canFit": model.canFitCurrent,
+            "bestSize": model.bestSizeText ?? "",
             "engineStillVisible": model.engine.debugStillVisible,
             "launchAtLogin": model.launchAtLogin,
             "enginePlayerRate": model.engine.playerRate,

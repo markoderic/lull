@@ -8,8 +8,15 @@ public enum WallpaperFile {
     public static let thumbnail = "thumb.jpg"
     public static let partialSuffix = ".partial"
 
-    public static func smooth(_ rate: Int) -> String { "smooth-\(rate).mp4" }
-    public static func limit(_ fps: Int) -> String { "limit-\(fps).mp4" }
+    public static func fitted(_ fit: FitSize) -> String { "fit-\(fit.label).mp4" }
+
+    public static func smooth(_ rate: Int, fit: FitSize? = nil) -> String {
+        fit.map { "smooth-\(rate)-fit-\($0.label).mp4" } ?? "smooth-\(rate).mp4"
+    }
+
+    public static func limit(_ fps: Int, fit: FitSize? = nil) -> String {
+        fit.map { "limit-\(fps)-fit-\($0.label).mp4" } ?? "limit-\(fps).mp4"
+    }
 }
 
 /// Everything remembered about one wallpaper. Stored as `info.json` in its folder.
@@ -40,6 +47,8 @@ public struct WallpaperInfo: Codable, Identifiable, Sendable, Equatable, Hashabl
     public var smoothMotion: Bool
     public var smoothRate: Int
     public var frameLimit: Int?
+    /// The screen resolution this wallpaper is converted to fit, when Fit to Screen is on.
+    public var fitSize: FitSize?
 
     public init(
         id: UUID,
@@ -57,7 +66,8 @@ public struct WallpaperInfo: Codable, Identifiable, Sendable, Equatable, Hashabl
         stillFrame: Int = 0,
         smoothMotion: Bool = false,
         smoothRate: Int = 120,
-        frameLimit: Int? = nil
+        frameLimit: Int? = nil,
+        fitSize: FitSize? = nil
     ) {
         self.id = id
         self.name = name
@@ -75,19 +85,30 @@ public struct WallpaperInfo: Codable, Identifiable, Sendable, Equatable, Hashabl
         self.smoothMotion = smoothMotion
         self.smoothRate = smoothRate
         self.frameLimit = frameLimit
+        self.fitSize = fitSize
     }
 
     /// A file with one frame can't animate.
     public var isStillOnly: Bool { frameCount <= 1 }
 
-    /// The file that should play for the current settings.
-    public var playbackFilename: String {
-        if smoothMotion { return WallpaperFile.smooth(smoothRate) }
-        if let frameLimit { return WallpaperFile.limit(frameLimit) }
-        return WallpaperFile.prepared
+    /// The real frames, with no generated ones: the source for still frames.
+    public var baseFilename: String {
+        fitSize.map(WallpaperFile.fitted) ?? WallpaperFile.prepared
     }
 
-    /// The start time of a frame in the base prepared file.
+    /// The file that should play for the current settings.
+    public var playbackFilename: String {
+        if smoothMotion { return WallpaperFile.smooth(smoothRate, fit: fitSize) }
+        if let frameLimit { return WallpaperFile.limit(frameLimit, fit: fitSize) }
+        return baseFilename
+    }
+
+    /// The file the current mode needs. A still only ever uses real frames.
+    public var wantedFilename: String {
+        mode == .still ? baseFilename : playbackFilename
+    }
+
+    /// The start time of a frame in the base file. Fitting keeps the same timeline.
     public func time(forFrame frame: Int) -> Double {
         let clamped = min(max(frame, 0), max(frameCount - 1, 0))
         if let frameTimes, clamped < frameTimes.count { return frameTimes[clamped] }

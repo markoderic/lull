@@ -76,7 +76,8 @@ enum TestMedia {
         height: Int = 180,
         fps: Int = 30,
         frames: Int = 30,
-        withAudio: Bool = false
+        withAudio: Bool = false,
+        transform: CGAffineTransform = .identity
     ) async throws -> URL {
         let url = try temporaryDirectory().appendingPathComponent(name)
         let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
@@ -86,6 +87,7 @@ enum TestMedia {
             AVVideoHeightKey: height,
         ])
         input.expectsMediaDataInRealTime = false
+        input.transform = transform
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
         writer.add(input)
 

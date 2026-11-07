@@ -48,7 +48,9 @@ The user picks one rule, and **Desktop Focus is the default**.
 - **Desktop Focus:** plays only when Finder is the frontmost app, which is what clicking the desktop does, and the desktop isn't fully covered.
 - **Whenever Visible:** plays whenever the desktop isn't fully covered.
 
-In both modes it always pauses when the screen is locked or asleep, the screen saver is running, the user session is inactive, or Low Power Mode is on. While the panel is open an animated wallpaper plays, because the person is looking at it, unless one of those always-pause conditions applies.
+In both modes it always pauses when the screen is locked or asleep, the screen saver is running, the user session is inactive, or Low Power Mode is on.
+
+The desktop only ever follows this rule, even while the panel is open. The panel's preview stays live on its own, using the same player with the desktop detached from it. An early version let an open panel force the desktop to play, which meant the rule visibly did nothing while a person was trying it out.
 
 While paused, the player is **fully unloaded** and a still frame stays on screen. Resuming seeks back to the exact frame.
 
@@ -83,6 +85,16 @@ Each wallpaper remembers its own mode and chosen frame.
 - Generated versions are kept after the toggle turns off, so switching back is quick.
 - The last frame interpolates into the first, so the loop point is smooth too.
 - **Frame limit** is a second control for videos at 59 FPS or above with Smooth Motion off: Original, 60 (only for sources over 61 FPS) and 30. It makes a version by dropping frames, without interpolation.
+
+### File size and Fit to Screen
+
+Wallpapers fill the screen, so a mismatched file is cropped or enlarged.
+
+- With nothing added yet, the panel names the best size for the main display, in pixels.
+- If filling the screen would hide more than 25% of a file, the panel says how much and offers **Fit to Screen**.
+- If a video needs enlarging more than 2×, the panel says it may look soft and names a better size. GIFs skip this, because nearly all are small and nothing can be done about it. Fit to Screen isn't offered here, because enlarging can't add detail.
+- Fit to Screen makes `fit-<width>x<height>.mp4` once, at the display's exact resolution: the whole picture centered, over a blurred copy of itself. Smooth Motion and frame limits build on the fitted file, and still frames come from it. Rotated phone videos are written upright.
+- It's optional because it makes larger files.
 
 ### Importing
 
@@ -119,6 +131,8 @@ Width 320 points, native controls only:
 3. Only the controls that apply: Smooth Motion and rate, frame limit, or the frame slider.
 4. Divider, then a 4-column grid of thumbnails with an add tile. Files can also be dropped anywhere on the panel.
 5. A status line and a "…" menu: the pause rule, Launch at Login, About and Quit.
+
+The panel closes on a click outside that isn't the start of a drag, on switching apps, and on Escape. It doesn't use a transient popover, because that closes the moment another app is clicked, which would make dragging a file in from Finder impossible.
 
 The status line reads "Plays when you click the desktop" or "Plays when the desktop is visible", or "Paused: Low Power Mode is on" or "Still wallpaper" when those apply. Right-clicking a tile offers Delete, or Cancel while importing, or Remove when missing.
 

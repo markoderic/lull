@@ -170,6 +170,7 @@ class Run:
         run("-f", "lavfi", "-i", source, "-vf", "split[a][b];[a]palettegen[p];[b][p]paletteuse", str(media / "chart.gif"))
         run("-f", "lavfi", "-i", "testsrc2=s=1280x720:r=120:d=3", "-c:v", "hevc_videotoolbox", "-b:v", "12M", "-tag:v", "hvc1", "-an", str(media / "fast.mp4"))
         run("-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=8", "-vf", "split[a][b];[a]palettegen[p];[b][p]paletteuse", str(media / "long.gif"))
+        run("-f", "lavfi", "-i", "testsrc2=s=1080x1920:r=60:d=5", "-c:v", "hevc_videotoolbox", "-b:v", "12M", "-tag:v", "hvc1", "-an", str(media / "vertical.mp4"))
         (media / "broken.gif").write_text("this is not a gif")
         return media
 
@@ -179,6 +180,7 @@ def main():
     parser.add_argument("--media")
     parser.add_argument("--artifacts")
     parser.add_argument("--races-only", action="store_true")
+    parser.add_argument("--panel-only", action="store_true")
     options = parser.parse_args()
 
     CONTROL.parent.mkdir(parents=True, exist_ok=True)
@@ -197,10 +199,17 @@ def main():
     media = run.make_media()
     run.control("hide-apps", run.hidden_list)
     try:
-        if not options.races_only:
-            scenario(run, media, options.media)
+        if options.panel_only:
+            panel_rules(run, media)
+        else:
+            if not options.races_only:
+                scenario(run, media, options.media)
+                run.quit()
+            races(run, media)
             run.quit()
-        races(run, media)
+            panel_rules(run, media)
+            run.quit()
+            fit_to_screen(run, media)
     finally:
         run.end_covers()
         run.quit()
@@ -216,6 +225,105 @@ def main():
     if (run.artifacts / "cover.log").exists():
         print((run.artifacts / "cover.log").read_text()[:800])
     sys.exit(1 if run.failures else 0)
+
+
+def fit_to_screen(run, media):
+    """A file that doesn't match the screen gets advice and an optional conversion."""
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.go_to_desktop()
+    run.launch()
+    time.sleep(1)
+    run.check("the best size is offered before anything is added", "Best fit for this screen" in run.state()["bestSize"], run.state()["bestSize"])
+    run.send(f"import {media / 'chart.gif'}")
+    run.wait("a landscape file imports", lambda s: s["wallpaperCount"] == 1, timeout=30)
+    run.check("a landscape file gets no warning and no toggle", run.state()["fitNote"] == "" and not run.state()["canFit"], str(run.state()))
+
+    run.section("Fit to Screen")
+    run.send(f"import {media / 'vertical.mp4'}")
+    state = run.wait("a vertical video imports", lambda s: s["wallpaperCount"] == 2 and s["currentName"] == "vertical", timeout=30)
+    run.check("it says how much is hidden", "hiding about" in state["fitNote"], state["fitNote"])
+    run.check("Fit to Screen is offered", state["canFit"])
+    run.wait("it plays", lambda s: s["desktopMoving"], timeout=6)
+    time.sleep(1.5)
+    print(f"        vertical video, cropped: {run.cpu_percent()}, app footprint {run.footprint_mb():.1f} MB")
+    started = time.time()
+    run.send("fit on")
+    state = run.wait("the conversion finishes and takes over", lambda s: s["fitOn"] and s["playbackFile"].startswith("fit-") and not s["versionWorking"] and s["desktopMoving"], timeout=120)
+    print(f"        converted in {time.time() - started:.1f}s to {state['playbackFile']}")
+    run.check("the warning goes away", state["fitNote"] == "", state["fitNote"])
+    time.sleep(1.5)
+    print(f"        vertical video, fitted: {run.cpu_percent()}, app footprint {run.footprint_mb():.1f} MB")
+    run.send("mode still")
+    run.wait("Still works on a fitted wallpaper", lambda s: s["mode"] == "still" and not s["enginePlayerLoaded"])
+    run.send("frame 20")
+    run.wait("the slider works on it", lambda s: s["stillFrame"] == 20)
+    run.send("mode animated")
+    run.wait("back to Animated", lambda s: s["mode"] == "animated" and s["desktopMoving"])
+    run.send("smooth on")
+    run.wait("Smooth Motion works on it", lambda s: s["playbackFile"].startswith("smooth-120-fit-") and not s["versionWorking"] and s["desktopMoving"], timeout=180)
+    run.send("smooth off")
+    run.wait("Smooth Motion off", lambda s: not s["smoothMotion"] and s["playbackFile"].startswith("fit-"))
+    run.send("fit off")
+    state = run.wait("turning it off goes back to the original", lambda s: not s["fitOn"] and s["playbackFile"] == "prepared.mp4" and s["desktopMoving"])
+    run.check("and the advice returns", "hiding about" in state["fitNote"], state["fitNote"])
+    run.send("fit on")
+    run.wait("turning it back on is instant", lambda s: s["fitOn"] and s["playbackFile"].startswith("fit-") and not s["versionWorking"] and s["desktopMoving"], timeout=3)
+
+
+def panel_rules(run, media):
+    """The desktop follows the pause rule even while the panel is open."""
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.go_to_desktop()
+    run.launch()
+    time.sleep(1)
+    run.send(f"import {media / 'chart.gif'}")
+    run.wait("wallpaper imported", lambda s: s["wallpaperCount"] == 1, timeout=30)
+    run.wait("it plays with the desktop focused", lambda s: s["desktopMoving"])
+
+    run.section("Opening the panel with another app in front")
+    run.cover("focus", 60)
+    run.wait("another app takes focus", lambda s: not s["finderFront"] and not s["engineWantsPlaying"])
+    run.send("panel open")
+    run.wait("the preview plays", lambda s: s["panelOpen"] and s["previewReady"] and s["enginePlayerRate"] > 0)
+    time.sleep(0.5)
+    state = run.state()
+    run.check("the desktop stays frozen", not state["desktopMoving"], str(state))
+    run.check("the desktop keeps showing a still frame", state["engineStillVisible"], str(state))
+    run.send("panel close")
+    run.wait("closing the panel stops everything", lambda s: not s["panelOpen"] and not s["enginePlayerLoaded"])
+    run.end_covers()
+
+    run.section("Changing the rule with the panel open")
+    time.sleep(1.5)
+    run.go_to_desktop()
+    run.wait("playing on the desktop again", lambda s: s["finderFront"] and s["desktopMoving"])
+    run.send("panel open")
+    run.wait("panel opens", lambda s: s["panelOpen"])
+    time.sleep(0.3)
+    run.check("with the desktop focused, it keeps moving behind the panel", run.state()["desktopMoving"], str(run.state()))
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+
+    run.section("Leaving the panel")
+    run.send("panel open")
+    run.wait("panel opens", lambda s: s["panelOpen"])
+    run.cover("focus", 8)
+    run.wait("another app taking focus closes the panel", lambda s: not s["panelOpen"], timeout=4)
+    run.wait("and the desktop freezes", lambda s: not s["desktopMoving"] and not s["engineWantsPlaying"], timeout=4)
+    run.end_covers()
+    time.sleep(1.5)
+    run.go_to_desktop()
+    run.wait("clicking the desktop plays it again", lambda s: s["desktopMoving"])
+
+    run.section("Whenever Visible with a window in front")
+    run.send("rule visible")
+    run.cover("focus", 8)
+    run.wait("another app takes focus", lambda s: not s["finderFront"])
+    time.sleep(0.5)
+    run.check("the desktop keeps moving around a small window", run.state()["desktopMoving"], str(run.state()))
+    run.end_covers()
+    time.sleep(1)
+    run.send("rule focus")
 
 
 def races(run, media):
@@ -381,7 +489,7 @@ def scenario(run, media, extra_media):
     focus = run.cover("focus", 60)
     run.wait("paused before opening the panel", lambda s: not s["engineWantsPlaying"])
     run.send("panel open")
-    run.wait("opening the panel plays it, so the preview is live", lambda s: s["panelOpen"] and s["engineWantsPlaying"])
+    run.wait("opening the panel starts the preview", lambda s: s["panelOpen"] and s["engineWantsPlaying"])
     run.wait("the preview shows the video", lambda s: s["previewReady"] and s["enginePlayerRate"] > 0)
     time.sleep(0.5)
     for appearance in ("dark", "light"):

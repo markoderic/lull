@@ -448,3 +448,182 @@ struct RebuildTests {
         }
     }
 }
+
+@Suite("Fit to Screen")
+struct FitToScreenTests {
+    private let screen = FitSize(screenWidth: 1280, screenHeight: 800)
+
+    /// A vertical GIF with a red top half and a blue bottom half.
+    private func verticalGIF(frames: Int = 6) throws -> URL {
+        try TestMedia.makeGIF(width: 180, height: 320, delays: Array(repeating: 0.1, count: frames)) { context, _ in
+            context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: 180, height: 160))
+            context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(x: 0, y: 160, width: 180, height: 160))
+        }
+    }
+
+    private func pixel(_ image: CGImage, x: Double, y: Double) -> (r: UInt8, g: UInt8, b: UInt8) {
+        let pixels = TestMedia.rgbaPixels(image)
+        // Bitmap contexts draw bottom up, so row 0 of this buffer is the top of the picture.
+        let column = Int(Double(image.width - 1) * x), row = Int(Double(image.height - 1) * y)
+        let index = (row * image.width + column) * 4
+        return (pixels[index], pixels[index + 1], pixels[index + 2])
+    }
+
+    private func fitted(_ info: WallpaperInfo) -> WallpaperInfo {
+        var copy = info
+        copy.fitSize = screen
+        return copy
+    }
+
+    @Test func outputIsExactlyTheScreenSize() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let info = fitted(try await importer.importFile(try verticalGIF(), progress: noProgress))
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let file = store.url(WallpaperFile.fitted(screen), in: info.id)
+        let size = try await TestMedia.videoTrack(file).load(.naturalSize)
+        #expect(size == CGSize(width: 1280, height: 800))
+    }
+
+    @Test func keepsEveryFrameAndTheDuration() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let info = fitted(try await importer.importFile(try verticalGIF(frames: 6), progress: noProgress))
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let file = store.url(WallpaperFile.fitted(screen), in: info.id)
+        #expect(try await TestMedia.sampleCount(file) == 6)
+        #expect(abs(try await AVURLAsset(url: file).load(.duration).seconds - 0.6) < 0.02)
+    }
+
+    @Test func theWholePictureIsVisibleTheRightWayUp() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let info = fitted(try await importer.importFile(try verticalGIF(), progress: noProgress))
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let image = try await TestMedia.frame(store.url(WallpaperFile.fitted(screen), in: info.id), at: 0.05)
+        // Without fitting, the very top and bottom of a vertical picture would be cropped away.
+        let top = pixel(image, x: 0.5, y: 0.02), bottom = pixel(image, x: 0.5, y: 0.98)
+        #expect(top.r > 200 && top.b < 80, "top was \(top)")
+        #expect(bottom.b > 200 && bottom.r < 80, "bottom was \(bottom)")
+    }
+
+    @Test func theSidesAreFilledInsteadOfBlack() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let info = fitted(try await importer.importFile(try verticalGIF(), progress: noProgress))
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let image = try await TestMedia.frame(store.url(WallpaperFile.fitted(screen), in: info.id), at: 0.05)
+        for x in [0.03, 0.97] {
+            let side = pixel(image, x: x, y: 0.15)
+            #expect(Int(side.r) + Int(side.g) + Int(side.b) > 40, "side at \(x) was \(side)")
+        }
+    }
+
+    @Test func colorsInThePictureAreUnchanged() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let gif = try TestMedia.flatColorGIF(colors: [(0.9, 0.7, 0.2), (0.1, 0.3, 0.6)], width: 180, height: 320)
+        let info = fitted(try await importer.importFile(gif, progress: noProgress))
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let image = try await TestMedia.frame(store.url(WallpaperFile.fitted(screen), in: info.id), at: 0.05)
+        let center = pixel(image, x: 0.5, y: 0.5)
+        #expect(abs(Int(center.r) - 230) < 14, "center was \(center)")
+        #expect(abs(Int(center.g) - 179) < 14, "center was \(center)")
+        #expect(abs(Int(center.b) - 51) < 14, "center was \(center)")
+    }
+
+    @Test func aRotatedPhoneVideoStaysTheRightWayUp() async throws {
+        // Stored sideways with a rotation flag, the way phones record vertical video.
+        let source = try await TestMedia.makeVideo(
+            width: 640, height: 360, frames: 8, transform: CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 360, ty: 0)
+        )
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let imported = try await importer.importFile(source, progress: noProgress)
+        #expect(imported.width == 360 && imported.height == 640)
+
+        let info = fitted(imported)
+        try await importer.makeVersion(of: info, progress: noProgress)
+        let file = store.url(WallpaperFile.fitted(screen), in: info.id)
+        let image = try await TestMedia.frame(file, at: 0.1)
+        #expect(image.width == 1280 && image.height == 800)
+
+        // The picture must match the upright original inside the centered column.
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: source))
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let rotated = try await generator.image(at: CMTime(seconds: 0.1, preferredTimescale: 600)).image
+        let columnWidth = 800.0 * 360.0 / 640.0
+        for (x, y) in [(0.5, 0.1), (0.2, 0.3), (0.8, 0.7), (0.5, 0.9)] {
+            let expected = pixel(rotated, x: x, y: y)
+            let fitX = 0.5 + (x - 0.5) * columnWidth / 1280.0
+            let actual = pixel(image, x: fitX, y: y)
+            #expect(abs(Int(actual.r) - Int(expected.r)) < 50, "at \(x),\(y) expected \(expected) got \(actual)")
+        }
+    }
+
+    @Test func smoothMotionWorksOnAFittedWallpaper() async throws {
+        guard SmoothMotion.isAvailable else { return }
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        var info = fitted(try await importer.importFile(try verticalGIF(), progress: noProgress))
+        info.smoothMotion = true
+        info.smoothRate = 60
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let file = store.url(WallpaperFile.smooth(60, fit: screen), in: info.id)
+        #expect(try await TestMedia.sampleCount(file) == 36)
+        let size = try await TestMedia.videoTrack(file).load(.naturalSize)
+        #expect(size == CGSize(width: 1280, height: 800))
+    }
+
+    @Test func frameLimitWorksOnAFittedWallpaper() async throws {
+        let source = try await TestMedia.makeVideo(width: 360, height: 640, fps: 60, frames: 30)
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        var info = fitted(try await importer.importFile(source, progress: noProgress))
+        info.frameLimit = 30
+        try await importer.makeVersion(of: info, progress: noProgress)
+
+        let file = store.url(WallpaperFile.limit(30, fit: screen), in: info.id)
+        #expect(try await TestMedia.sampleCount(file) == 15)
+        let size = try await TestMedia.videoTrack(file).load(.naturalSize)
+        #expect(size == CGSize(width: 1280, height: 800))
+    }
+
+    @Test func stillFramesComeFromTheFittedFileOnceItExists() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let info = fitted(try await importer.importFile(try verticalGIF(), progress: noProgress))
+        try await importer.makeVersion(of: info, progress: noProgress)
+        let image = try await importer.image(for: info, frame: 2)
+        #expect(image.width == 1280 && image.height == 800)
+    }
+
+    @Test func stillFramesFallBackToThePreparedFile() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let original = try await importer.importFile(try verticalGIF(), progress: noProgress)
+        let image = try await importer.image(for: fitted(original), frame: 2)
+        #expect(image.width == original.width)
+    }
+
+    @Test func cancellingLeavesNoFile() async throws {
+        let store = try TestMedia.makeStore()
+        let importer = Importer(store: store)
+        let info = fitted(try await importer.importFile(try verticalGIF(), progress: noProgress))
+        let task = Task { try await importer.makeVersion(of: info, progress: noProgress) }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(!store.fileExists(WallpaperFile.fitted(screen), in: info.id))
+        #expect(!store.fileExists(WallpaperFile.fitted(screen) + WallpaperFile.partialSuffix, in: info.id))
+    }
+}

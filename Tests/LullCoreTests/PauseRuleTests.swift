@@ -65,8 +65,27 @@ struct PauseRuleTests {
         #expect(PauseRule.decide(inputs(panel: true, lowPower: true)) == .pause(.lowPowerMode))
     }
 
-    @Test func openPanelPlaysEvenWhenAnotherAppHasFocusOrDesktopIsCovered() {
-        #expect(PauseRule.decide(inputs(finder: false, open: false, panel: true)) == .play)
+    @Test func anOpenPanelDoesntOverrideTheRuleForTheDesktop() {
+        #expect(PauseRule.decide(inputs(finder: false, panel: true)) == .pause(.otherAppFocused))
+        #expect(PauseRule.decide(inputs(open: false, panel: true)) == .pause(.desktopCovered))
+        #expect(PauseRule.decide(inputs(panel: true)) == .play)
+    }
+
+    @Test func thePreviewPlaysWhileThePanelIsOpen() {
+        #expect(inputs(finder: false, open: false, panel: true).previewShouldPlay)
+    }
+
+    @Test func thePreviewStopsWhenThePanelCloses() {
+        #expect(!inputs(panel: false).previewShouldPlay)
+    }
+
+    @Test func thePreviewRespectsLockingAndLowPower() {
+        #expect(!inputs(panel: true, locked: true).previewShouldPlay)
+        #expect(!inputs(panel: true, lowPower: true).previewShouldPlay)
+    }
+
+    @Test func aStillWallpaperHasNoPreviewToPlay() {
+        #expect(!inputs(animated: false, panel: true).previewShouldPlay)
     }
 
     @Test func stillWallpaperNeverPlays() {
@@ -79,7 +98,8 @@ struct PauseRuleTests {
         #expect(inputs(rule: .wheneverVisible, finder: false).needsCoverageCheck)
         #expect(!inputs(finder: false).needsCoverageCheck)
         #expect(!inputs(animated: false).needsCoverageCheck)
-        #expect(!inputs(panel: true).needsCoverageCheck)
+        #expect(inputs(panel: true).needsCoverageCheck)
+        #expect(!inputs(finder: false, panel: true).needsCoverageCheck)
         #expect(!inputs(locked: true).needsCoverageCheck)
         #expect(!inputs(asleep: true).needsCoverageCheck)
         #expect(!inputs(saver: true).needsCoverageCheck)

@@ -35,7 +35,11 @@ final class WallpaperEngine {
     private var seekFinished = false
     private var isFading = false
 
-    private(set) var wantsPlaying = false
+    /// The desktop follows the pause rule. The panel's preview plays whenever the panel is open.
+    /// They share one player, so a frozen desktop just isn't attached to it.
+    private var wantsDesktop = false
+    private var wantsPreview = false
+    var wantsPlaying: Bool { wantsDesktop || wantsPreview }
     /// Bumped by anything that invalidates a still frame capture still in flight.
     private var captureGeneration = 0
     /// Bumped by anything that replaces what's being shown.
@@ -145,28 +149,61 @@ final class WallpaperEngine {
 
     // MARK: Playing and pausing
 
-    func setPlaying(_ playing: Bool) {
-        guard playing != wantsPlaying else { return }
-        wantsPlaying = playing
+    func setPlayback(desktop: Bool, preview: Bool) {
+        guard desktop != wantsDesktop || preview != wantsPreview else { return }
+        let wasPlaying = wantsPlaying, wasDesktop = wantsDesktop
+        wantsDesktop = desktop
+        wantsPreview = preview
         captureGeneration += 1
-        // A fade in progress finishes by checking `wantsPlaying` itself.
+        // A fade in progress finishes by checking these itself.
         guard !isFading else { return }
-        if playing {
-            resume()
-        } else {
+        if !wantsPlaying {
             pauseAndUnload()
+        } else if !wasPlaying {
+            resume()
+        } else if desktop != wasDesktop {
+            if desktop {
+                attachPlayer()
+                revealPlayerWhereReady()
+            } else {
+                freezeDesktop()
+            }
         }
     }
 
     private func resume() {
         if let player, loadedURL == videoURL {
+            attachPlayer()
             player.play()
-            lastStill = nil
-            surfaces.forEach { $0.setStill(nil, fade: false) }
+            previews.forEach { $0.setStill(nil, fade: false) }
+            if wantsDesktop {
+                lastStill = nil
+                windows.forEach { $0.surface.setStill(nil, fade: false) }
+            }
         } else {
             unload()
             buildPlayer()
         }
+    }
+
+    /// Gives the desktop a still frame and takes it off the player, while the preview keeps going.
+    private func freezeDesktop() {
+        guard let player, let url = loadedURL else { return }
+        let time = player.currentTime()
+        let generation = captureGeneration
+        captureStill(from: url, at: time.isNumeric ? time.seconds : savedTime.seconds) { [weak self] image in
+            guard let self, generation == self.captureGeneration, !self.wantsDesktop, let image else { return }
+            self.lastStill = image
+            for window in self.windows {
+                window.surface.setStill(image, fade: false)
+                window.surface.attach(nil)
+            }
+        }
+    }
+
+    private func attachPlayer() {
+        windows.forEach { $0.surface.attach(wantsDesktop ? player : nil) }
+        previews.forEach { $0.attach(player) }
     }
 
     /// Pauses, puts the exact frame up as a still, then fully unloads the player so it costs nothing.
@@ -216,7 +253,7 @@ final class WallpaperEngine {
         looper = newLooper
         loadedURL = url
         seekFinished = false
-        surfaces.forEach { $0.attach(newPlayer) }
+        attachPlayer()
         startWhenItemExists(newPlayer, at: savedTime, attemptsLeft: 200)
     }
 
@@ -294,21 +331,21 @@ final class WallpaperEngine {
 
             let surface = WallpaperSurface(host: host)
             surface.resize(to: view.bounds)
-            configure(surface)
+            configure(surface, attached: wantsDesktop)
             window.orderFrontRegardless()
             windows.append(DesktopWindow(window: window, surface: surface))
         }
     }
 
-    private func configure(_ surface: WallpaperSurface) {
+    private func configure(_ surface: WallpaperSurface, attached: Bool) {
         surface.onReady = { [weak self] _ in self?.revealPlayerWhereReady() }
         surface.setStill(lastStill, fade: false)
-        surface.attach(player)
+        surface.attach(attached ? player : nil)
     }
 
     func add(preview: WallpaperSurface) {
         previews.append(preview)
-        configure(preview)
+        configure(preview, attached: true)
     }
 
     func remove(preview: WallpaperSurface) {
@@ -322,5 +359,10 @@ final class WallpaperEngine {
     /// Whether the panel's preview has video it can show.
     var debugPreviewReady: Bool { previews.contains { $0.isReadyForDisplay } }
     var debugStillVisible: Bool { windows.first?.surface.hasStill ?? false }
+    /// Whether video is actually reaching the desktop, as opposed to only the panel's preview.
+    var debugDesktopMoving: Bool {
+        guard let window = windows.first, let player else { return false }
+        return window.surface.hasPlayer && player.rate > 0 && !window.surface.hasStill
+    }
     #endif
 }

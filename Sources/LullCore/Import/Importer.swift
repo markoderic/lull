@@ -193,12 +193,48 @@ public final class Importer: Sendable {
 
     // MARK: Versions
 
+    /// Makes whatever file the wallpaper's settings call for, if it's missing.
+    public func makeVersion(of info: WallpaperInfo, progress: @escaping Progress) async throws {
+        var finalProgress = progress
+        // Still frames come from the fitted base file, so it's always made first.
+        if let fit = info.fitSize, !store.fileExists(WallpaperFile.fitted(fit), in: info.id) {
+            let needsMore = info.wantedFilename != WallpaperFile.fitted(fit)
+            try await makeFittedVersion(of: info, fit: fit) { progress(needsMore ? $0 * 0.3 : $0) }
+            if needsMore { finalProgress = { progress(0.3 + $0 * 0.7) } }
+        }
+        guard info.mode == .animated else { return }
+        if info.smoothMotion {
+            try await makeSmoothVersion(of: info, rate: info.smoothRate, progress: finalProgress)
+        } else if let limit = info.frameLimit {
+            try await makeLimitedVersion(of: info, limit: limit, progress: finalProgress)
+        }
+    }
+
+    /// Converts a wallpaper to a screen's exact resolution, without cropping any of the picture.
+    private func makeFittedVersion(of info: WallpaperInfo, fit: FitSize, progress: @escaping Progress) async throws {
+        do {
+            try Task.checkCancellation()
+            let source = try await frameSource(for: info)
+            try await writeVersion(WallpaperFile.fitted(fit), in: info.id, from: source, fps: source.fps) { writer in
+                while let frame = try source.nextFrame() {
+                    try Task.checkCancellation()
+                    try await writer.append(frame.buffer, time: frame.time)
+                    progress(min(frame.time / source.duration, 1) * 0.95)
+                }
+            }
+            progress(1)
+        } catch {
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            throw ImportError.classify(error)
+        }
+    }
+
     /// Makes the Smooth Motion version for a rate. The result is saved beside the others and kept.
     public func makeSmoothVersion(of info: WallpaperInfo, rate: Int, progress: @escaping Progress) async throws {
         do {
             try Task.checkCancellation()
             let source = try await frameSource(for: info)
-            try await writeVersion(WallpaperFile.smooth(rate), in: info.id, from: source, fps: Double(rate)) { writer in
+            try await writeVersion(WallpaperFile.smooth(rate, fit: info.fitSize), in: info.id, from: source, fps: Double(rate)) { writer in
                 try await SmoothMotion.generate(from: source, to: writer, fps: rate, progress: progress)
             }
             progress(1)
@@ -213,9 +249,8 @@ public final class Importer: Sendable {
     public func makeLimitedVersion(of info: WallpaperInfo, limit: Int, progress: @escaping Progress) async throws {
         do {
             try Task.checkCancellation()
-            let source = try await VideoFrameSource.open(store.url(WallpaperFile.prepared, in: info.id))
-            defer { source.cancel() }
-            try await writeVersion(WallpaperFile.limit(limit), in: info.id, from: source, fps: Double(limit)) { writer in
+            let source = try await frameSource(for: info, preferOriginalGIF: false)
+            try await writeVersion(WallpaperFile.limit(limit, fit: info.fitSize), in: info.id, from: source, fps: Double(limit)) { writer in
                 var limiter = FrameLimiter(limit: limit)
                 while let frame = try source.nextFrame() {
                     try Task.checkCancellation()
@@ -258,19 +293,23 @@ public final class Importer: Sendable {
     }
 
     /// The best available source for making a version. A GIF's own frames beat its encoded copy.
-    private func frameSource(for info: WallpaperInfo) async throws -> FrameSource {
-        if info.kind == .gif, let name = info.originalFilename, store.fileExists(name, in: info.id) {
+    private func frameSource(for info: WallpaperInfo, preferOriginalGIF: Bool = true) async throws -> FrameSource {
+        let source: FrameSource
+        if preferOriginalGIF, info.kind == .gif, let name = info.originalFilename, store.fileExists(name, in: info.id) {
             let url = store.url(name, in: info.id)
             let details = try GIFDetails(url: url)
-            return try GIFFrameSource(
+            source = try GIFFrameSource(
                 url: url,
                 details: details,
                 outputWidth: info.width,
                 outputHeight: info.height,
                 sharpPixels: enlargePlan(for: details).sharpPixels
             )
+        } else {
+            source = try await VideoFrameSource.open(store.url(WallpaperFile.prepared, in: info.id))
         }
-        return try await VideoFrameSource.open(store.url(WallpaperFile.prepared, in: info.id))
+        guard let fit = info.fitSize else { return source }
+        return try FittedFrameSource(base: source, size: fit)
     }
 
     /// Runs `body` against a writer on a partial file, and only moves it into place when complete.
@@ -306,9 +345,11 @@ public final class Importer: Sendable {
 
     // MARK: Still frames
 
-    /// Decodes one frame of the base prepared file, so a generated in-between frame can never be chosen.
+    /// Decodes one frame of the base file, so a generated in-between frame can never be chosen.
     public func image(for info: WallpaperInfo, frame: Int) async throws -> CGImage {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: store.url(WallpaperFile.prepared, in: info.id)))
+        // The fitted base may still be being made. Its frames line up with the prepared file's.
+        let filename = store.fileExists(info.baseFilename, in: info.id) ? info.baseFilename : WallpaperFile.prepared
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: store.url(filename, in: info.id)))
         generator.appliesPreferredTrackTransform = true
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero

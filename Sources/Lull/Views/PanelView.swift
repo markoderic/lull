@@ -23,6 +23,7 @@ struct PanelView: View {
                 } else if !current.isStillOnly {
                     StillControls(model: model, info: current)
                 }
+                FitControls(model: model, info: current)
             } else {
                 emptyState
             }
@@ -63,6 +64,8 @@ struct PanelView: View {
         [
             model.current?.mode.rawValue ?? "none",
             model.current?.smoothMotion.description ?? "",
+            model.current?.fitSize?.width.description ?? "",
+            model.fitNote ?? "",
             model.message ?? "",
             "\(model.wallpapers.count + model.pendingImports.count)",
         ]
@@ -100,6 +103,11 @@ struct PanelView: View {
             Text("Drop a file here, or use the + button below.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let bestSize = model.bestSizeText {
+                Text(bestSize)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 22)
@@ -201,6 +209,52 @@ struct PanelView: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .accessibilityLabel("More options")
+        }
+    }
+}
+
+/// Fit to Screen and the advice about a file's size. Nothing shows for a file that already fits.
+private struct FitControls: View {
+    let model: AppModel
+    let info: WallpaperInfo
+
+    /// Shared with the other version rows, so only claim the progress when no other setting is on.
+    private var isWorkingOnFit: Bool {
+        model.versionProgress[info.id] != nil && info.fitSize != nil && !info.smoothMotion && info.frameLimit == nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if model.canFitCurrent {
+                HStack(spacing: 8) {
+                    Text("Fit to Screen")
+                    Spacer(minLength: 0)
+                    if isWorkingOnFit, let progress = model.versionProgress[info.id] {
+                        ProgressView(value: min(max(progress, 0), 1))
+                            .progressViewStyle(.circular)
+                            .controlSize(.small)
+                    }
+                    Toggle("Fit to Screen", isOn: Binding(
+                        get: { info.fitSize != nil },
+                        set: { model.setFitToScreen($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                }
+                .help("Converts this wallpaper once, to your screen's exact resolution.")
+            }
+            if let note = model.fitNote {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let fit = info.fitSize {
+                Text("Shows the whole picture at \(fit.width) × \(fit.height), with a blurred copy filling the rest.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

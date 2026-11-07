@@ -9,15 +9,14 @@ final class PlaybackMonitor {
     private static let coverageInterval: TimeInterval = 2
 
     private(set) var inputs: PlaybackInputs
-    private var decision: PlaybackDecision?
+    private var lastReported: PlaybackInputs?
     private var coverageTimer: Timer?
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
-    private let onDecision: (PlaybackDecision) -> Void
-    /// Called whenever anything the rule looks at changes, even if the decision doesn't.
-    var onInputsChange: ((PlaybackInputs) -> Void)?
+    /// Called whenever anything the rule looks at changes.
+    private let onChange: (PlaybackInputs) -> Void
 
-    init(rule: PauseRuleMode, onDecision: @escaping (PlaybackDecision) -> Void) {
-        self.onDecision = onDecision
+    init(rule: PauseRuleMode, onChange: @escaping (PlaybackInputs) -> Void) {
+        self.onChange = onChange
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         // Lock notifications only report changes, so ask once in case of launching while locked.
         let session = CGSessionCopyCurrentDictionary() as? [String: Any]
@@ -56,11 +55,9 @@ final class PlaybackMonitor {
     }
 
     private func apply() {
-        onInputsChange?(inputs)
-        let newDecision = PauseRule.decide(inputs)
-        guard newDecision != decision else { return }
-        decision = newDecision
-        onDecision(newDecision)
+        guard inputs != lastReported else { return }
+        lastReported = inputs
+        onChange(inputs)
     }
 
     // MARK: Coverage

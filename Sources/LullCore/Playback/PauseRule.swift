@@ -48,8 +48,14 @@ public struct PlaybackInputs: Equatable, Sendable {
     /// Whether a coverage check could change the decision. Checking is the only recurring
     /// work the app does while idle, so it runs only when this is true.
     public var needsCoverageCheck: Bool {
-        guard hasAnimatedWallpaper, !screenIsUnavailable, !lowPowerMode, !panelIsOpen else { return false }
+        guard hasAnimatedWallpaper, !screenIsUnavailable, !lowPowerMode else { return false }
         return rule == .wheneverVisible || finderIsFrontmost
+    }
+
+    /// The panel's preview stays live while it's open. This never moves the desktop: the desktop
+    /// only ever follows `PauseRule`.
+    public var previewShouldPlay: Bool {
+        panelIsOpen && hasAnimatedWallpaper && !screenIsUnavailable && !lowPowerMode
     }
 }
 
@@ -71,7 +77,6 @@ public enum PauseRule {
         guard inputs.hasAnimatedWallpaper else { return .pause(.notAnimated) }
         if inputs.screenIsUnavailable { return .pause(.screenUnavailable) }
         if inputs.lowPowerMode { return .pause(.lowPowerMode) }
-        if inputs.panelIsOpen { return .play }
         if inputs.rule == .desktopFocus, !inputs.finderIsFrontmost { return .pause(.otherAppFocused) }
         if !inputs.desktopIsOpen { return .pause(.desktopCovered) }
         return .play

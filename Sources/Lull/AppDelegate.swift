@@ -25,6 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func anotherCopyIsRunning() -> Bool {
+        #if DEBUG
+        // End-to-end checks use their own library, so they can run beside a real copy.
+        if ProcessInfo.processInfo.environment["LULL_DEBUG_ROOT"] != nil { return false }
+        #endif
         guard let id = Bundle.main.bundleIdentifier else { return false }
         return NSRunningApplication.runningApplications(withBundleIdentifier: id)
             .contains { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }

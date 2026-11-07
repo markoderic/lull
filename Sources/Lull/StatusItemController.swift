@@ -8,6 +8,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let model: AppModel
     private var popover: NSPopover?
+    private var leaveMonitors: [Any] = []
+    private var activationObserver: NSObjectProtocol?
+    private var dragCountAtMouseDown = 0
+    private var isChoosingFiles = false
 
     init(model: AppModel) {
         self.model = model
@@ -37,7 +41,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         let hosting = NSHostingController(rootView: PanelView(model: model, onAdd: { [weak self] in self?.chooseFiles() }))
         hosting.sizingOptions = [.preferredContentSize]
         let popover = NSPopover()
-        popover.behavior = .transient
+        // Closing is handled here instead of with `.transient`, which closes the moment another app
+        // is clicked. That would make it impossible to drag a file in from Finder.
+        popover.behavior = .applicationDefined
         popover.animates = true
         popover.contentViewController = hosting
         popover.delegate = self
@@ -47,13 +53,61 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         NSApp.activate()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
-        if !popover.isShown {
+        if popover.isShown {
+            startWatchingForLeaving()
+        } else {
             discardPopover()
             model.panelDidClose()
         }
     }
 
+    /// The panel closes when the person goes elsewhere: a click outside that isn't the start of a
+    /// drag, switching apps, or pressing Escape.
+    private func startWatchingForLeaving() {
+        stopWatchingForLeaving()
+        dragCountAtMouseDown = NSPasteboard(name: .drag).changeCount
+        let down = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            MainActor.assumeIsolated { self?.dragCountAtMouseDown = NSPasteboard(name: .drag).changeCount }
+        }
+        let up = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, NSPasteboard(name: .drag).changeCount == self.dragCountAtMouseDown else { return }
+                self.closeUnlessChoosingFiles()
+            }
+        }
+        let other = NSEvent.addGlobalMonitorForEvents(matching: [.rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeUnlessChoosingFiles() }
+        }
+        let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let isEscape = event.keyCode == 53
+            if isEscape { MainActor.assumeIsolated { self?.closeUnlessChoosingFiles() } }
+            return isEscape ? nil : event
+        }
+        leaveMonitors = [down, up, other, escape].compactMap { $0 }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            // A held mouse button means a click or drag in progress, which the mouse-up settles.
+            guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+                  NSEvent.pressedMouseButtons == 0 else { return }
+            MainActor.assumeIsolated { self?.closeUnlessChoosingFiles() }
+        }
+    }
+
+    private func stopWatchingForLeaving() {
+        leaveMonitors.forEach(NSEvent.removeMonitor)
+        leaveMonitors = []
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
+        activationObserver = nil
+    }
+
+    private func closeUnlessChoosingFiles() {
+        if !isChoosingFiles { close() }
+    }
+
     private func discardPopover() {
+        stopWatchingForLeaving()
         popover?.delegate = nil
         // Releasing the content frees the panel's views and thumbnails.
         popover?.contentViewController = nil
@@ -79,9 +133,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         panel.canChooseDirectories = false
         panel.prompt = "Add"
         // Keeps the panel open behind the file picker.
-        popover?.behavior = .applicationDefined
+        isChoosingFiles = true
         let response = panel.runModal()
-        popover?.behavior = .transient
+        isChoosingFiles = false
         if response == .OK { model.add(urls: panel.urls) }
     }
 

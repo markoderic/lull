@@ -16,11 +16,12 @@ It's a 2 MB native app with no accounts, analytics or network use. Free and open
 ## Features
 
 - **GIFs, MP4 and MOV.** Each file is prepared once, then played on your Mac's video hardware.
-- **Desktop Focus or Whenever Visible.** By default the wallpaper plays only when you click the desktop. Switch to Whenever Visible to have it play whenever part of it can be seen.
+- **Desktop Focus or Whenever Visible.** With Desktop Focus, the default, the wallpaper plays only after you click the desktop and freezes as soon as you use another app. With Whenever Visible, it keeps playing around your windows and pauses only when they cover the whole desktop.
 - **Still or Animated.** Freeze any wallpaper and drag a slider to pick the exact frame. Your desktop updates as you drag.
 - **Smooth Motion.** Generates in-between frames for GIFs and videos, up to 120 FPS, using Apple's frame rate conversion. It runs once and the result is saved.
 - **Frame limits.** Lower a fast video to 60 or 30 FPS to save power.
 - **Sharp pixel art.** Small GIFs are enlarged before encoding so pixel art stays crisp.
+- **Fit to Screen.** Converts a file that doesn't match your screen, like a vertical video, to your exact resolution. The whole picture is centered, with a blurred copy of it filling the rest.
 - **Multiple displays.** One wallpaper across every screen, decoded once.
 
 Your real wallpaper setting is never changed. Quit Lull and your normal wallpaper is back.
@@ -43,6 +44,26 @@ open dist/release/Lull.app
 ```
 
 You need Xcode 26 or later. There's no Xcode project to generate: it's a Swift package, and `Package.swift` opens directly in Xcode.
+
+## Choosing a file
+
+Wallpapers fill your screen, so a file looks best when it matches your screen's shape and resolution. When you have no wallpapers yet, the panel shows the best size for your screen. It also tells you if a file you add will be cropped or look soft.
+
+| Your screen | Best size |
+|---|---|
+| MacBook Air 13-inch | 2560 × 1664 |
+| MacBook Air 15-inch | 2880 × 1864 |
+| MacBook Pro 14-inch | 3024 × 1964 |
+| MacBook Pro 16-inch | 3456 × 2234 |
+| iMac 24-inch | 4480 × 2520 |
+| Studio Display, 5K | 5120 × 2880 |
+| 4K display | 3840 × 2160 |
+
+These are the native resolutions. If you've changed your display scaling, the size shown in the panel will differ.
+
+- **1920 × 1080 is a good lighter choice.** It's close enough in shape to any landscape screen and uses far less memory than 4K.
+- **Vertical videos get zoomed in,** which hides much of the picture on a landscape screen. Turn on Fit to Screen to see all of it. It keeps every frame, but makes a larger file. In one test, a 29-second, 23 MB vertical video took 18 seconds to convert and came out at 115 MB, with CPU use about the same as before.
+- **Converting can't add detail.** A small file enlarged to your screen's resolution still looks soft, so Fit to Screen is only offered when part of the picture is hidden.
 
 ## How light is it?
 
@@ -78,7 +99,7 @@ The design and the evidence behind it are in [the design spec](docs/superpowers/
 
 - **Desktop only.** The lock screen shows your normal wallpaper.
 - **Menu bar colors follow your real wallpaper.** macOS picks the menu bar's text color from it, without knowing about the animation on top. A wallpaper that's much lighter or darker than your real one can make menu bar text harder to read.
-- **Translucent full-screen windows count as covering the desktop,** so the wallpaper pauses behind them.
+- **Maximized and full-screen windows count as covering the desktop,** including translucent ones, so the wallpaper pauses behind them in either mode. To see the difference between the modes, use a window that leaves part of the desktop showing.
 - **WebM isn't supported,** because Apple's video frameworks don't reliably open it.
 - **Smooth Motion has limits.** Thin lines can wobble in generated frames, and hard cuts become a very quick dissolve.
 
