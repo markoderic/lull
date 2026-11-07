@@ -44,8 +44,10 @@ class Run:
     def control(self, *args):
         return subprocess.run([str(CONTROL), *map(str, args)], capture_output=True, text=True).stdout.strip()
 
-    def launch(self):
+    def launch(self, welcome=False):
         env = dict(os.environ, LULL_DEBUG_ROOT=str(self.library), LULL_DEBUG_STATE=str(self.state_path), LULL_DEBUG_DEFAULTS=self.defaults)
+        if welcome:
+            env["LULL_DEBUG_WELCOME"] = "1"
         self.state_path.unlink(missing_ok=True)
         self.process = subprocess.Popen([str(APP)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.wait("app started", lambda s: True, timeout=10)
@@ -185,6 +187,7 @@ def main():
     parser.add_argument("--schedule-only", action="store_true")
     parser.add_argument("--speed-only", action="store_true")
     parser.add_argument("--cleanup-only", action="store_true")
+    parser.add_argument("--welcome-only", action="store_true")
     parser.add_argument("--hardened", action="store_true", help="test under the security settings a signed release uses")
     options = parser.parse_args()
 
@@ -215,10 +218,12 @@ def main():
     run = Run(options.artifacts)
     media = run.make_media()
     # These checks don't need a bare desktop, so they leave open apps alone.
-    if not (options.schedule_only or options.speed_only or options.cleanup_only):
+    if not (options.schedule_only or options.speed_only or options.cleanup_only or options.welcome_only):
         run.control("hide-apps", run.hidden_list)
     try:
-        if options.cleanup_only:
+        if options.welcome_only:
+            first_launch(run, media)
+        elif options.cleanup_only:
             library_cleanup(run, media)
         elif options.schedule_only:
             day_and_night(run, media)
@@ -241,6 +246,8 @@ def main():
             playback_speed(run, media)
             run.quit()
             library_cleanup(run, media)
+            run.quit()
+            first_launch(run, media)
     finally:
         run.end_covers()
         run.quit()
@@ -258,6 +265,22 @@ def main():
     if (run.artifacts / "cover.log").exists():
         print((run.artifacts / "cover.log").read_text()[:800])
     sys.exit(1 if run.failures else 0)
+
+
+def first_launch(run, media):
+    """A menu bar app shows nothing when opened, which looks broken to someone new."""
+    run.defaults = f"lull-e2e-welcome-{os.getpid()}"
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.launch(welcome=True)
+    run.wait("the panel opens by itself the first time", lambda s: s["panelOpen"], timeout=4)
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+    run.quit()
+    run.launch(welcome=True)
+    time.sleep(1.5)
+    run.check("it doesn't open by itself again", not run.state()["panelOpen"])
+    run.quit()
+    subprocess.run(["defaults", "delete", run.defaults], capture_output=True)
 
 
 def library_cleanup(run, media):

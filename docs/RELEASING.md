@@ -30,10 +30,10 @@ gh repo create markoderic/lull --public --source . --push --description "GIFs an
    NOTARY_PROFILE=lull-notary SIGN_IDENTITY="Developer ID Application: Marko Deric (B376DM5LNP)" scripts/release.sh
    ```
 
-4. Publish, replacing the version throughout:
+4. Publish, replacing the version. The file is always called `Lull.dmg`, so the download page's button keeps working for every release. To publish the page itself, Pages serves it from `docs/` on `main`.
 
    ```bash
-   gh release create v1.0.0 dist/Lull-1.0.0.dmg dist/Lull-1.0.0.dmg.sha256 --title "Lull 1.0.0" --notes-file CHANGELOG.md
+   gh release create v1.0.0 dist/Lull.dmg dist/Lull.dmg.sha256 --title "Lull 1.0.0" --notes-file docs/release-notes.md
    ```
 
 ## Certificate expiry

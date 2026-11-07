@@ -6,6 +6,7 @@ public final class AppSettings: @unchecked Sendable {
         static let pauseRule = "pauseRule"
         static let currentWallpaperID = "currentWallpaperID"
         static let daySchedule = "daySchedule"
+        static let hasBeenWelcomed = "hasBeenWelcomed"
     }
 
     private let defaults: UserDefaults
@@ -17,6 +18,11 @@ public final class AppSettings: @unchecked Sendable {
     public var pauseRule: PauseRuleMode {
         get { defaults.string(forKey: Key.pauseRule).flatMap(PauseRuleMode.init(rawValue:)) ?? .desktopFocus }
         set { defaults.set(newValue.rawValue, forKey: Key.pauseRule) }
+    }
+
+    public var hasBeenWelcomed: Bool {
+        get { defaults.bool(forKey: Key.hasBeenWelcomed) }
+        set { defaults.set(newValue, forKey: Key.hasBeenWelcomed) }
     }
 
     public var daySchedule: DaySchedule {

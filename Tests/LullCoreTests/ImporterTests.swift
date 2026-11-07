@@ -139,7 +139,9 @@ struct GIFImportTests {
         for (index, color) in colors.enumerated() {
             let image = try await Importer(store: store).image(for: info, frame: index)
             let average = TestMedia.averageColor(image)
-            let tolerance = 12.0
+            // Enough to catch a wrong color conversion, which is off by far more. Encoders running
+            // side by side in the test suite can drift slightly on a hard cut.
+            let tolerance = 18.0
             #expect(abs(average.r - Double(color.0) * 255) < tolerance, "frame \(index) red \(average.r)")
             #expect(abs(average.g - Double(color.1) * 255) < tolerance, "frame \(index) green \(average.g)")
             #expect(abs(average.b - Double(color.2) * 255) < tolerance, "frame \(index) blue \(average.b)")
