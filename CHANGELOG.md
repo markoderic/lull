@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- The wallpaper starts moving almost as soon as you can see your desktop. It used to take about 2 seconds, because Lull often looked while a window was still leaving, then didn't look again for 2 seconds.
+
 ## 1.0.0
 
 First release.

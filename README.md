@@ -92,6 +92,8 @@ Measured on the release build on an M5 Pro MacBook Pro with macOS 27. CPU figure
 | What's on screen | Lull | Video decoder | WindowServer | Lull's memory | Decoder's memory |
 |---|---|---|---|---|---|
 | Paused, another app focused | 0.00% | 0% | no added load | 16 MB | up to 36 MB |
+| Paused, Finder focused but windows cover the desktop | 0.49% | 0% | no added load | same as paused | same as paused |
+| Paused, covered, on Whenever Visible | 0.20% | 0% | no added load | same as paused | same as paused |
 | Still wallpaper | 0.00% | 0% | no added load | 24 MB | none |
 | GIF at its own 12.5 FPS | 1.1% | 0.8% | 9.6% | 21 MB | 23 MB |
 | 1080p video, 30 FPS | 1.6% | 1.7% | 13.4% | 28 MB | 51 MB |

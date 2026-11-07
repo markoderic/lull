@@ -8,9 +8,11 @@ It needs a Mac with an M1 chip or newer, on macOS 15.4 or later. That link is th
 
 There's a [step-by-step guide with pictures](https://markoderic.github.io/lull/#install) if you'd like one.
 
-## What's in it
+## What's new in 1.0.1
 
-This is the first release.
+The wallpaper now starts moving almost as soon as you can see your desktop. It used to take about 2 seconds.
+
+## What's in it
 
 - GIFs, MP4 and MOV as your wallpaper, behind your desktop icons
 - Desktop Focus and Whenever Visible, to choose when it plays
