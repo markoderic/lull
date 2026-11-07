@@ -49,6 +49,8 @@ public struct WallpaperInfo: Codable, Identifiable, Sendable, Equatable, Hashabl
     public var frameLimit: Int?
     /// The screen resolution this wallpaper is converted to fit, when Fit to Screen is on.
     public var fitSize: FitSize?
+    /// `nil` is normal speed. Optional so wallpapers saved before this existed still load.
+    public var speed: Double?
 
     public init(
         id: UUID,
@@ -67,7 +69,8 @@ public struct WallpaperInfo: Codable, Identifiable, Sendable, Equatable, Hashabl
         smoothMotion: Bool = false,
         smoothRate: Int = 120,
         frameLimit: Int? = nil,
-        fitSize: FitSize? = nil
+        fitSize: FitSize? = nil,
+        speed: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -86,7 +89,10 @@ public struct WallpaperInfo: Codable, Identifiable, Sendable, Equatable, Hashabl
         self.smoothRate = smoothRate
         self.frameLimit = frameLimit
         self.fitSize = fitSize
+        self.speed = speed
     }
+
+    public var playbackSpeed: Double { speed ?? 1 }
 
     /// A file with one frame can't animate.
     public var isStillOnly: Bool { frameCount <= 1 }

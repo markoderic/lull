@@ -12,6 +12,33 @@ struct PanelView: View {
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
 
     var body: some View {
+        Group {
+            if model.isCleaningUp {
+                CleanupView(model: model, columns: columns)
+            } else {
+                mainContent
+            }
+        }
+        .padding(12)
+        .frame(width: 320)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .padding(3)
+                    .allowsHitTesting(false)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter(\.isFileURL)
+            guard !files.isEmpty else { return false }
+            model.add(urls: files)
+            return true
+        } isTargeted: { isDropTargeted = $0 }
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: layoutKey)
+    }
+
+    private var mainContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let current = model.current {
                 preview
@@ -46,23 +73,6 @@ struct PanelView: View {
             }
             footer
         }
-        .padding(12)
-        .frame(width: 320)
-        .overlay {
-            if isDropTargeted {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
-                    .padding(3)
-                    .allowsHitTesting(false)
-            }
-        }
-        .dropDestination(for: URL.self) { urls, _ in
-            let files = urls.filter(\.isFileURL)
-            guard !files.isEmpty else { return false }
-            model.add(urls: files)
-            return true
-        } isTargeted: { isDropTargeted = $0 }
-        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: layoutKey)
     }
 
     /// Changes whenever the panel's shape changes, which is what animates its controls.
@@ -71,7 +81,9 @@ struct PanelView: View {
             model.current?.mode.rawValue ?? "none",
             model.current?.smoothMotion.description ?? "",
             model.current?.fitSize?.width.description ?? "",
+            model.speedHint ?? "",
             model.schedule.isOn.description,
+            model.isCleaningUp.description,
             model.fitNote ?? "",
             model.message ?? "",
             "\(model.wallpapers.count + model.pendingImports.count)",
@@ -105,13 +117,21 @@ struct PanelView: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 28, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("Add a GIF or video")
-                .font(.headline)
-            Text("Drop a file here, or use the + button below.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let bestSize = model.bestSizeText {
-                Text(bestSize)
+            if model.wallpapers.isEmpty {
+                Text("Add a GIF or video")
+                    .font(.headline)
+                Text("Drop a file here, or use the + button below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let bestSize = model.bestSizeText {
+                    Text(bestSize)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Choose a wallpaper")
+                    .font(.headline)
+                Text("Click one below, or drop in another file.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -202,6 +222,11 @@ struct PanelView: View {
                     set: { model.setLaunchAtLogin($0) }
                 ))
                 Divider()
+                Button("Clean Up Library…") {
+                    model.startCleanup()
+                }
+                .disabled(model.wallpapers.isEmpty)
+                Divider()
                 Button("About Lull") {
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
@@ -217,6 +242,64 @@ struct PanelView: View {
             .fixedSize()
             .accessibilityLabel("More options")
         }
+    }
+}
+
+/// Choosing wallpapers to delete, with how much space each takes up.
+private struct CleanupView: View {
+    let model: AppModel
+    let columns: [GridItem]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Clean Up Library")
+                .font(.headline)
+
+            ScrollView(.vertical) {
+                LazyVGrid(columns: columns, spacing: 6) {
+                    ForEach(model.wallpapers) { info in
+                        let selected = model.cleanupSelection.contains(info.id)
+                        WallpaperTile(
+                            name: "\(info.name), \(LibraryCleanup.format(model.wallpaperSizes[info.id] ?? 0))",
+                            image: model.thumbnails[info.id],
+                            isSelected: selected,
+                            state: model.missingIDs.contains(info.id) ? .missing : .ready,
+                            cleanupSelected: selected,
+                            action: { model.toggleCleanupSelection(info.id) }
+                        )
+                    }
+                }
+            }
+            .scrollIndicators(.automatic)
+            .frame(height: gridHeight)
+
+            Text(model.message ?? model.cleanupSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button(model.isEverythingSelectedForCleanup ? "Deselect All" : "Select All") {
+                    model.toggleSelectAllForCleanup()
+                }
+                Spacer(minLength: 0)
+                Button("Done") {
+                    model.finishCleanup()
+                }
+                Button(LibraryCleanup.deleteTitle(selected: model.cleanupSelection.count), role: .destructive) {
+                    model.deleteCleanupSelection()
+                }
+                .disabled(model.cleanupSelection.isEmpty)
+            }
+            .controlSize(.small)
+        }
+    }
+
+    /// Up to four rows, then it scrolls.
+    private var gridHeight: CGFloat {
+        let rows = min(Int((Double(model.wallpapers.count) / 4).rounded(.up)), 4)
+        let tileHeight = (320.0 - 24.0 - 18.0) / 4.0 * 10.0 / 16.0
+        return CGFloat(max(rows, 1)) * tileHeight + CGFloat(max(rows - 1, 0)) * 6
     }
 }
 
@@ -344,6 +427,7 @@ private struct AnimatedControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            speedRow
             if !rates.isEmpty {
                 smoothMotionRow
                 if info.smoothMotion {
@@ -352,6 +436,36 @@ private struct AnimatedControls: View {
             }
             if !info.smoothMotion, !info.availableFrameLimits.isEmpty {
                 frameLimitRow
+            }
+        }
+    }
+
+    private var speedRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text("Speed")
+                Slider(
+                    value: Binding(
+                        get: { Double(PlaybackSpeed.index(of: info.playbackSpeed)) },
+                        set: { model.setSpeed(PlaybackSpeed.stops[Int($0.rounded())]) }
+                    ),
+                    in: 0...Double(PlaybackSpeed.stops.count - 1)
+                )
+                .labelsHidden()
+                .controlSize(.small)
+                .accessibilityLabel("Speed")
+                .accessibilityValue(PlaybackSpeed.label(for: info.playbackSpeed))
+                Text(PlaybackSpeed.label(for: info.playbackSpeed))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, alignment: .trailing)
+            }
+            if let hint = model.speedHint {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

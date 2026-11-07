@@ -78,6 +78,14 @@ public final class WallpaperStore: Sendable {
         try? FileManager.default.removeItem(at: folder(for: id))
     }
 
+    /// The space a wallpaper takes up, including its Smooth Motion and other versions.
+    public func diskUsage(of id: UUID) -> Int64 {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder(for: id), includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        return files.reduce(0) { total, file in
+            total + Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+    }
+
     public func fileExists(_ filename: String, in id: UUID) -> Bool {
         FileManager.default.fileExists(atPath: url(filename, in: id).path)
     }

@@ -107,6 +107,16 @@ Wallpapers fill the screen, so a mismatched file is cropped or enlarged.
 - Fit to Screen makes `fit-<width>x<height>.mp4` once, at the display's exact resolution: the whole picture centered, over a blurred copy of itself. Smooth Motion and frame limits build on the fitted file, and still frames come from it. Rotated phone videos are written upright.
 - It's optional because it makes larger files.
 
+### Cleaning up the library
+
+Right-clicking a tile offers Delete. "Clean Up Library…" in the "…" menu opens a screen with selectable tiles, a running total of the space they use, Select All, Done and Delete. Everything goes to the Trash, and the person's own original files aren't touched. The screen stays open until Done, or until nothing's left. Closing the panel cancels it without deleting anything. Deleting the wallpaper on screen brings the normal wallpaper back. This screen has no preview, so it doesn't keep the player running.
+
+### Speed
+
+Each animated wallpaper has its own speed, on a slider with seven stops: 0.25×, 0.5×, 0.75×, Normal, 1.25×, 1.5× and 2×. Normal sits in the middle. Multiples are used instead of percentages because they're familiar from video players.
+
+It's the player's rate, so it's instant and needs no conversion. It carries across pauses, Still and back, Smooth Motion and relaunches. When slowing a file takes it below 15 frames a second, the panel suggests Smooth Motion.
+
 ### Importing
 
 - **GIF timing:** per-frame delays are respected. A delay under 11 ms becomes 100 ms, the browser convention.

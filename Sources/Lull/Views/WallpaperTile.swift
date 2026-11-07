@@ -12,6 +12,8 @@ struct WallpaperTile: View {
     let image: NSImage?
     let isSelected: Bool
     let state: State
+    /// Shows a selection circle when cleaning up the library.
+    var cleanupSelected: Bool?
     let action: () -> Void
 
     private let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -54,6 +56,16 @@ struct WallpaperTile: View {
             .overlay {
                 if isSelected {
                     shape.strokeBorder(Color.accentColor, lineWidth: 2)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if let cleanupSelected {
+                    Image(systemName: cleanupSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 14, weight: .medium))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, cleanupSelected ? Color.accentColor : .black.opacity(0.35))
+                        .background(Circle().fill(.black.opacity(cleanupSelected ? 0 : 0.2)))
+                        .padding(3)
                 }
             }
             .contentShape(shape)

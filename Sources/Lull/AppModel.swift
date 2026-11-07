@@ -26,6 +26,9 @@ final class AppModel {
     private(set) var isPanelOpen = false
     private(set) var inputs = PlaybackInputs()
     private(set) var message: String?
+    private(set) var isCleaningUp = false
+    private(set) var cleanupSelection: Set<UUID> = []
+    private(set) var wallpaperSizes: [UUID: Int64] = [:]
     /// Loaded only while the panel is open, so a closed panel holds no images.
     private(set) var thumbnails: [UUID: NSImage] = [:]
 
@@ -190,6 +193,7 @@ final class AppModel {
 
     /// Puts a wallpaper on screen according to its saved settings.
     private func apply(_ info: WallpaperInfo, fade: Bool) {
+        engine.setSpeed(PlaybackSpeed.stops[PlaybackSpeed.index(of: info.playbackSpeed)])
         if store.isPreparedMissing(info) {
             rebuild(info)
             return
@@ -345,6 +349,27 @@ final class AppModel {
                 try? importer.saveStill(image, for: info)
                 self?.reloadThumbnail(for: info)
             }
+        }
+    }
+
+    // MARK: Speed
+
+    /// Instant, because the player does the work. No new version of the file is needed.
+    func setSpeed(_ speed: Double) {
+        guard var info = current, info.playbackSpeed != speed else { return }
+        info.speed = speed == 1 ? nil : speed
+        save(info)
+        engine.setSpeed(speed)
+    }
+
+    var speedHint: String? {
+        current.flatMap { info in
+            PlaybackSpeed.hint(
+                speed: info.playbackSpeed,
+                sourceFPS: info.sourceFPS,
+                smoothMotion: info.smoothMotion,
+                canUseSmoothMotion: isSmoothMotionSupported && !info.availableSmoothRates(displayMaxFPS: displayMaxFPS).isEmpty
+            )
         }
     }
 
@@ -535,12 +560,22 @@ final class AppModel {
     }
 
     func delete(_ id: UUID) {
+        guard let turnedOffSchedule = removeFromLibrary(id) else {
+            show(message: "This wallpaper couldn't be moved to the Trash.")
+            return
+        }
+        show(message: turnedOffSchedule ? Self.scheduleOffMessage : LibraryCleanup.movedMessage(count: 1))
+    }
+
+    private static let scheduleOffMessage = "Day and Night is off because one of its wallpapers was deleted."
+
+    /// Returns `nil` if it couldn't be moved to the Trash, and otherwise whether that ended the schedule.
+    private func removeFromLibrary(_ id: UUID) -> Bool? {
         jobs.cancel(id: id)
         do {
             try store.trash(id: id)
         } catch {
-            show(message: "This wallpaper couldn't be moved to the Trash.")
-            return
+            return nil
         }
         wallpapers.removeAll { $0.id == id }
         missingIDs.remove(id)
@@ -549,7 +584,6 @@ final class AppModel {
         var plan = schedule
         let turnedOff = plan.removeWallpaper(id)
         if plan != schedule { updateSchedule(plan) }
-        if turnedOff { show(message: "Day and Night is off because one of its wallpapers was deleted.") }
         if id == currentID {
             currentID = nil
             settings.currentWallpaperID = nil
@@ -557,6 +591,70 @@ final class AppModel {
             monitor?.setAnimated(false)
             syncInputs()
         }
+        return turnedOff
+    }
+
+    // MARK: Clean Up Library
+
+    func startCleanup() {
+        guard !wallpapers.isEmpty else { return }
+        wallpaperSizes = Dictionary(uniqueKeysWithValues: wallpapers.map { ($0.id, store.diskUsage(of: $0.id)) })
+        cleanupSelection = []
+        isCleaningUp = true
+        // There's no preview on this screen, so it has nothing to keep playing for.
+        monitor?.setPanelOpen(false)
+        syncInputs()
+    }
+
+    func finishCleanup() {
+        guard isCleaningUp else { return }
+        isCleaningUp = false
+        cleanupSelection = []
+        wallpaperSizes = [:]
+        monitor?.setPanelOpen(isPanelOpen)
+        syncInputs()
+    }
+
+    func toggleCleanupSelection(_ id: UUID) {
+        if cleanupSelection.remove(id) == nil { cleanupSelection.insert(id) }
+    }
+
+    var isEverythingSelectedForCleanup: Bool {
+        !wallpapers.isEmpty && cleanupSelection.count == wallpapers.count
+    }
+
+    func toggleSelectAllForCleanup() {
+        cleanupSelection = isEverythingSelectedForCleanup ? [] : Set(wallpapers.map(\.id))
+    }
+
+    var cleanupSummary: String {
+        LibraryCleanup.summary(
+            selected: cleanupSelection.count,
+            total: wallpapers.count,
+            selectedBytes: cleanupSelection.reduce(0) { $0 + (wallpaperSizes[$1] ?? 0) },
+            totalBytes: wallpaperSizes.values.reduce(0, +)
+        )
+    }
+
+    /// Moves the selection to the Trash, and stays on this screen unless nothing's left to clean up.
+    func deleteCleanupSelection() {
+        var moved = 0, failed = 0, turnedOffSchedule = false
+        for id in cleanupSelection {
+            if let turnedOff = removeFromLibrary(id) {
+                moved += 1
+                turnedOffSchedule = turnedOffSchedule || turnedOff
+            } else {
+                failed += 1
+            }
+        }
+        cleanupSelection = []
+        wallpaperSizes = wallpaperSizes.filter { key, _ in wallpapers.contains { $0.id == key } }
+        if failed > 0 {
+            show(message: LibraryCleanup.failedMessage(moved: moved, failed: failed))
+        } else if moved > 0 {
+            show(message: turnedOffSchedule ? Self.scheduleOffMessage : LibraryCleanup.movedMessage(count: moved))
+        }
+        if wallpapers.isEmpty { finishCleanup() }
     }
 
     // MARK: Playback problems
@@ -612,6 +710,7 @@ final class AppModel {
 
     func panelDidClose() {
         isPanelOpen = false
+        finishCleanup()
         thumbnails = [:]
         monitor?.setPanelOpen(false)
         syncInputs()

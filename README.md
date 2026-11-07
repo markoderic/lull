@@ -19,6 +19,7 @@ It's a 2 MB native app with no accounts, analytics or network use. Free and open
 - **Desktop Focus or Whenever Visible.** With Desktop Focus, the default, the wallpaper plays only after you click the desktop and freezes as soon as you use another app. With Whenever Visible, it keeps playing around your windows and pauses only when they cover the whole desktop.
 - **Still or Animated.** Freeze any wallpaper and drag a slider to pick the exact frame. Your desktop updates as you drag.
 - **Smooth Motion.** Generates in-between frames for GIFs and videos, up to 120 FPS, using Apple's frame rate conversion. It runs once and the result is saved.
+- **Speed.** Slow any animation down to a quarter speed, or speed it up to double. It's instant, because nothing needs converting.
 - **Frame limits.** Lower a fast video to 60 or 30 FPS to save power.
 - **Day and Night.** Add two wallpapers, like a light and a dark version of the same scene, and choose the times they take over. Lull crossfades between them, and catches up if your Mac was asleep at the time.
 - **Sharp pixel art.** Small GIFs are enlarged before encoding so pixel art stays crisp.
@@ -51,6 +52,10 @@ open dist/release/Lull.app
 ```
 
 You need Xcode 26 or later. There's no Xcode project to generate: it's a Swift package, and `Package.swift` opens directly in Xcode.
+
+## Cleaning up
+
+To remove one wallpaper, right-click it. To remove several, choose **Clean Up Library…** from the "…" menu, select the ones you want gone, and see how much space that frees. Deleted wallpapers go to the Trash, along with all of their prepared versions. Your own original files aren't touched.
 
 ## Choosing a file
 

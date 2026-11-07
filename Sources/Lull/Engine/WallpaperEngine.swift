@@ -31,6 +31,7 @@ final class WallpaperEngine {
     private var loadedURL: URL?
     private var savedTime = CMTime.zero
     private var lastStill: CGImage?
+    private var speed: Float = 1
     private var hasContent = false
     private var seekFinished = false
     private var isFading = false
@@ -81,6 +82,14 @@ final class WallpaperEngine {
                 if self.wantsPlaying { self.buildPlayer() }
             }
         }
+    }
+
+    /// Takes effect immediately, and carries over to any player built later.
+    func setSpeed(_ value: Double) {
+        speed = Float(value)
+        guard let player else { return }
+        player.defaultRate = speed
+        if player.rate > 0 { player.rate = speed }
     }
 
     /// Changes the still immediately, for dragging the frame slider.
@@ -244,6 +253,7 @@ final class WallpaperEngine {
         newPlayer.preventsDisplaySleepDuringVideoPlayback = false
         newPlayer.automaticallyWaitsToMinimizeStalling = false
         newPlayer.allowsExternalPlayback = false
+        newPlayer.defaultRate = speed
         let newLooper = AVPlayerLooper(player: newPlayer, templateItem: AVPlayerItem(asset: AVURLAsset(url: url)))
         looperStatus = newLooper.observe(\.status, options: [.new]) { [weak self] looper, _ in
             guard looper.status == .failed else { return }

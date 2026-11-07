@@ -183,6 +183,8 @@ def main():
     parser.add_argument("--races-only", action="store_true")
     parser.add_argument("--panel-only", action="store_true")
     parser.add_argument("--schedule-only", action="store_true")
+    parser.add_argument("--speed-only", action="store_true")
+    parser.add_argument("--cleanup-only", action="store_true")
     parser.add_argument("--hardened", action="store_true", help="test under the security settings a signed release uses")
     options = parser.parse_args()
 
@@ -203,12 +205,16 @@ def main():
 
     run = Run(options.artifacts)
     media = run.make_media()
-    # The schedule checks only read state, so they leave open apps alone.
-    if not options.schedule_only:
+    # These checks don't need a bare desktop, so they leave open apps alone.
+    if not (options.schedule_only or options.speed_only or options.cleanup_only):
         run.control("hide-apps", run.hidden_list)
     try:
-        if options.schedule_only:
+        if options.cleanup_only:
+            library_cleanup(run, media)
+        elif options.schedule_only:
             day_and_night(run, media)
+        elif options.speed_only:
+            playback_speed(run, media)
         elif options.panel_only:
             panel_rules(run, media)
         else:
@@ -222,6 +228,10 @@ def main():
             fit_to_screen(run, media)
             run.quit()
             day_and_night(run, media)
+            run.quit()
+            playback_speed(run, media)
+            run.quit()
+            library_cleanup(run, media)
     finally:
         run.end_covers()
         run.quit()
@@ -237,6 +247,172 @@ def main():
     if (run.artifacts / "cover.log").exists():
         print((run.artifacts / "cover.log").read_text()[:800])
     sys.exit(1 if run.failures else 0)
+
+
+def library_cleanup(run, media):
+    """Deleting several wallpapers at once."""
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.launch()
+    time.sleep(1)
+    for index, name in enumerate(("chart.gif", "vertical.mp4", "fast.mp4", "long.gif")):
+        run.send(f"import {media / name}")
+        run.wait(f"{name} imports", lambda s: s["wallpaperCount"] == index + 1 and s["pendingImports"] == 0, timeout=60)
+    folders = lambda: [p for p in run.library.iterdir() if p.is_dir()]
+    run.check("each wallpaper has a folder", len(folders()) == 4)
+
+    run.section("Clean Up Library")
+    run.send("panel open")
+    run.wait("panel opens", lambda s: s["panelOpen"])
+    run.send("cleanup start")
+    state = run.wait("clean up starts", lambda s: s["cleaningUp"])
+    run.check("it says how big the library is", state["cleanupSummary"].startswith("4 wallpapers, "), state["cleanupSummary"])
+    run.check("nothing is selected yet", state["cleanupSelected"] == 0)
+    print(f"        {state['cleanupSummary']}")
+    time.sleep(0.5)
+    run.send("cleanup 0")
+    run.send("cleanup 1")
+    state = run.wait("wallpapers can be selected", lambda s: s["cleanupSelected"] == 2)
+    run.check("it says how much space they free", state["cleanupSummary"].startswith("2 of 4 selected, "), state["cleanupSummary"])
+    print(f"        {state['cleanupSummary']}")
+    run.send("appearance dark")
+    time.sleep(0.5)
+    run.send(f"snapshot {run.artifacts / 'panel-cleanup-dark.png'}")
+    time.sleep(0.2)
+    run.send("cleanup 1")
+    run.wait("and deselected", lambda s: s["cleanupSelected"] == 1)
+    run.send("cleanup 1")
+    run.wait("selected again", lambda s: s["cleanupSelected"] == 2)
+
+    run.section("Deleting a selection")
+    run.send("cleanup delete")
+    state = run.wait("they're removed", lambda s: s["wallpaperCount"] == 2 and s["cleanupSelected"] == 0)
+    run.check("it confirms what happened", state["message"] == "Moved 2 wallpapers to the Trash.", state["message"])
+    run.check("the rest stay", state["cleaningUp"])
+    run.check("their folders are gone", len(folders()) == 2)
+    run.check("the wallpaper on screen wasn't touched", state["currentName"] == "long" and state["engineWindows"] >= 1, str(state))
+    run.send("cleanup done")
+    run.wait("Done goes back to the panel", lambda s: not s["cleaningUp"])
+
+    run.section("Deleting the wallpaper on screen")
+    run.send("cleanup start")
+    run.send("cleanup all")
+    run.wait("Select All selects everything", lambda s: s["cleanupSelected"] == 2)
+    run.send("cleanup all")
+    run.wait("and deselects it", lambda s: s["cleanupSelected"] == 0)
+    run.send("cleanup 1")
+    run.send("cleanup delete")
+    state = run.wait("the current wallpaper can be deleted", lambda s: s["wallpaperCount"] == 1)
+    run.check("the normal wallpaper comes back", state["engineWindows"] == 0 and not state["enginePlayerLoaded"], str(state))
+    run.check("it says so once", state["message"] == "Moved 1 wallpaper to the Trash.", state["message"])
+    run.send("cleanup done")
+    run.wait("Done", lambda s: not s["cleaningUp"])
+    time.sleep(0.4)
+    run.send(f"snapshot {run.artifacts / 'panel-choose-dark.png'}")
+    time.sleep(0.2)
+
+    run.section("Clearing the library")
+    run.send("cleanup start")
+    run.send("cleanup all")
+    run.send("cleanup delete")
+    state = run.wait("everything can go", lambda s: s["wallpaperCount"] == 0)
+    run.check("clean up ends by itself", not state["cleaningUp"])
+    run.check("nothing is left on disk", len(folders()) == 0)
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+
+    run.section("Leaving part way")
+    run.send(f"import {media / 'chart.gif'}")
+    run.wait("a wallpaper imports", lambda s: s["wallpaperCount"] == 1, timeout=30)
+    run.send("panel open")
+    run.wait("panel opens", lambda s: s["panelOpen"])
+    run.send("cleanup start")
+    run.send("cleanup 0")
+    run.wait("selected", lambda s: s["cleanupSelected"] == 1)
+    run.send("panel close")
+    state = run.wait("closing the panel cancels it", lambda s: not s["panelOpen"] and not s["cleaningUp"])
+    run.check("and deletes nothing", state["wallpaperCount"] == 1)
+
+
+def playback_speed(run, media):
+    """The panel's preview plays whatever else is going on, so this works with other apps open."""
+    shutil.rmtree(run.library, ignore_errors=True)
+    run.launch()
+    time.sleep(1)
+    run.send(f"import {media / 'long.gif'}")
+    run.wait("a wallpaper imports", lambda s: s["wallpaperCount"] == 1, timeout=60)
+    run.send("panel open")
+    state = run.wait("it plays at normal speed", lambda s: s["panelOpen"] and s["enginePlayerRate"] == 1 and s["previewReady"])
+    run.check("normal is the default", state["speed"] == 1)
+
+    def real_speed(seconds=2.0, loop=8.0):
+        """Measures how fast the video really moves, rather than trusting the setting."""
+        first = run.state()["engineTime"]
+        started = time.time()
+        time.sleep(seconds)
+        moved = (run.state()["engineTime"] - first) % loop
+        return moved / (time.time() - started)
+
+    run.section("Changing speed")
+    for speed in (0.25, 0.5, 1.5, 2):
+        run.send(f"speed {speed}")
+        run.wait(f"{speed}x takes effect right away", lambda s: abs(s["enginePlayerRate"] - speed) < 0.01, timeout=2)
+        time.sleep(0.3)
+        measured = real_speed()
+        print(f"        set {speed}, measured {measured:.2f}")
+        run.check(f"the video really moves at {speed}x", abs(measured - speed) < speed * 0.2 + 0.05, f"measured {measured:.2f}")
+
+    run.section("Keeping it")
+    run.send("speed 0.5")
+    run.wait("set to half speed", lambda s: abs(s["enginePlayerRate"] - 0.5) < 0.01, timeout=2)
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+    time.sleep(0.5)
+    run.send("panel open")
+    run.wait("it keeps its speed after a pause", lambda s: s["panelOpen"] and abs(s["enginePlayerRate"] - 0.5) < 0.01)
+    run.send("mode still")
+    run.wait("switched to Still", lambda s: s["mode"] == "still" and not s["enginePlayerLoaded"])
+    run.send("mode animated")
+    run.wait("and after Still and back", lambda s: s["mode"] == "animated" and abs(s["enginePlayerRate"] - 0.5) < 0.01)
+
+    run.section("With Smooth Motion")
+    run.send("speed 0.25")
+    state = run.wait("a quarter speed suggests Smooth Motion", lambda s: "Smooth Motion keeps it fluid" in s["speedHint"], timeout=2)
+    print(f"        {state['speedHint']}")
+    run.send("smooth on")
+    state = run.wait("it keeps its speed on the new version", lambda s: s["playbackFile"] == "smooth-120.mp4" and not s["versionWorking"] and abs(s["enginePlayerRate"] - 0.25) < 0.01, timeout=120)
+    run.check("the suggestion goes away", state["speedHint"] == "", state["speedHint"])
+    run.send("smooth off")
+    run.wait("Smooth Motion off", lambda s: not s["smoothMotion"])
+
+    run.section("Per wallpaper")
+    run.send(f"import {media / 'fast.mp4'}")
+    state = run.wait("another wallpaper starts at normal speed", lambda s: s["currentName"] == "fast" and s["pendingImports"] == 0 and s["enginePlayerRate"] == 1, timeout=30)
+    run.check("its own setting is normal", state["speed"] == 1)
+    time.sleep(1)
+    print(f"        720p at 120 FPS, normal: {run.cpu_percent()}")
+    run.send("speed 0.25")
+    run.wait("slowed down", lambda s: abs(s["enginePlayerRate"] - 0.25) < 0.01, timeout=2)
+    time.sleep(1)
+    print(f"        720p at 120 FPS, 0.25x: {run.cpu_percent()}")
+    run.send("speed 2")
+    run.wait("sped up", lambda s: abs(s["enginePlayerRate"] - 2) < 0.01, timeout=2)
+    time.sleep(1)
+    print(f"        720p at 120 FPS, 2x: {run.cpu_percent()}")
+    run.send("speed 1")
+    run.send("select 0")
+    run.wait("the first wallpaper still has its own speed", lambda s: s["currentName"] == "long" and abs(s["enginePlayerRate"] - 0.25) < 0.01)
+    run.send("panel close")
+    run.wait("panel closes", lambda s: not s["panelOpen"])
+    run.quit()
+    run.launch()
+    run.wait("it survives a relaunch", lambda s: s["currentName"] == "long" and s["speed"] == 0.25)
+    time.sleep(1)
+    run.send("panel open")
+    run.wait("and plays at that speed", lambda s: s["panelOpen"] and abs(s["enginePlayerRate"] - 0.25) < 0.01)
+    time.sleep(0.6)
+    run.send(f"snapshot {run.artifacts / 'panel-speed-dark.png'}")
+    time.sleep(0.2)
+    run.send("panel close")
 
 
 def day_and_night(run, media):

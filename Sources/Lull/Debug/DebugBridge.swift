@@ -50,6 +50,18 @@ final class DebugBridge {
         case "rate": model.setSmoothRate(Int(argument) ?? 120)
         case "limit": model.setFrameLimit(Int(argument))
         case "fit": model.setFitToScreen(argument == "on")
+        case "cleanup":
+            switch argument {
+            case "start": model.startCleanup()
+            case "done": model.finishCleanup()
+            case "all": model.toggleSelectAllForCleanup()
+            case "delete": model.deleteCleanupSelection()
+            default:
+                if let index = Int(argument), model.wallpapers.indices.contains(index) {
+                    model.toggleCleanupSelection(model.wallpapers[index].id)
+                }
+            }
+        case "speed": model.setSpeed(Double(argument) ?? 1)
         case "schedule": model.setScheduleOn(argument == "on")
         case "schedule-wallpapers":
             let indexes = argument.split(separator: " ").compactMap { Int($0) }
@@ -142,6 +154,11 @@ final class DebugBridge {
             "enginePlayerLoaded": model.engine.isPlayerLoaded,
             "previewReady": model.engine.debugPreviewReady,
             "desktopMoving": model.engine.debugDesktopMoving,
+            "speed": current?.playbackSpeed ?? 0,
+            "speedHint": model.speedHint ?? "",
+            "cleaningUp": model.isCleaningUp,
+            "cleanupSelected": model.cleanupSelection.count,
+            "cleanupSummary": model.isCleaningUp ? model.cleanupSummary : "",
             "scheduleOn": model.schedule.isOn,
             "scheduleActive": model.schedule.isActive,
             "scheduleCaption": model.scheduleCaption ?? "",
