@@ -8,9 +8,21 @@ on:
 jobs:
   test:
     runs-on: macos-26
+    # A normal run takes a few minutes. Fail instead of hanging for hours.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # The tests that make or convert video hung for over 2 hours on GitHub's
+      # virtual Macs, with no failures, and pass on a real Mac. They're skipped
+      # here and still run on a real Mac before each release: docs/RELEASING.md.
       - name: Test
-        run: swift test
+        run: >-
+          swift test
+          --skip GIFImportTests
+          --skip VideoImportTests
+          --skip FrameLimitTests
+          --skip SmoothMotionTests
+          --skip RebuildTests
+          --skip FitToScreenTests
       - name: Build the app
         run: scripts/build-app.sh
