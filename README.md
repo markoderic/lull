@@ -4,6 +4,28 @@
 
 <p align="center">GIFs and looping videos as your Mac wallpaper. It rests when nobody's looking.</p>
 
+<p align="center">
+  <a href="https://github.com/markoderic/lull/releases/latest/download/Lull.dmg"><img src="docs/images/download-button.svg" width="332" height="72" alt="Download for Mac"></a>
+</p>
+
+<p align="center">It's free, with no account and no ads. It needs a Mac with an M1 chip or newer, on macOS 15.4 or later.</p>
+
+## Install
+
+1. Open **Lull.dmg** from your Downloads folder.
+2. Drag Lull onto Applications.
+3. Open Lull from Applications, and click **Open** when your Mac asks. A small panel appears from a new icon at the top right of your screen. Drop a GIF or video onto it, and it's your wallpaper.
+
+If you open Lull straight from the installer window, it offers to move itself to Applications. There's also a [step-by-step guide with pictures](https://markoderic.github.io/lull/#install).
+
+Lull is signed with a Developer ID and notarized by Apple, which scans it for malware. Your Mac asks about anything downloaded from the internet the first time you open it. To confirm you have the real file, compare it with the checksum published with each release:
+
+```bash
+shasum -a 256 ~/Downloads/Lull.dmg
+```
+
+## What it is
+
 Lull is a very light menu bar app for macOS. Drag in a GIF or video you already have and it becomes your wallpaper, behind your desktop icons. When you can't see the wallpaper, Lull stops doing work: the video player is fully unloaded and CPU use drops to zero.
 
 It's a 2 MB native app with no accounts, analytics or network use. Free and open source under the MIT license.
@@ -28,21 +50,7 @@ It's a 2 MB native app with no accounts, analytics or network use. Free and open
 
 Your real wallpaper setting is never changed. Quit Lull and your normal wallpaper is back.
 
-## Install
-
-Requires macOS 15.4 or later on Apple Silicon.
-
-1. Download the latest DMG from [Releases](https://github.com/markoderic/lull/releases).
-2. Drag Lull to Applications and open it.
-3. Click the icon in your menu bar and add a GIF or video.
-
-Lull is signed with a Developer ID and notarized by Apple, which scans it for malware. The first time you open it, macOS shows its usual prompt for anything downloaded from the internet, and you can choose Open. To confirm you have the real file, compare it with the checksum published with each release:
-
-```bash
-shasum -a 256 ~/Downloads/Lull-1.0.0.dmg
-```
-
-### Build from source
+## Build from source
 
 ```bash
 git clone https://github.com/markoderic/lull.git

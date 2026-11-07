@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lull: GIFs and videos as your Mac wallpaper</title>
+<meta name="description" content="A free, very light Mac app that turns any GIF or looping video into your wallpaper. No account needed.">
+<meta property="og:title" content="Lull: GIFs and videos as your Mac wallpaper">
+<meta property="og:description" content="A free, very light Mac app that turns any GIF or looping video into your wallpaper.">
+<meta property="og:image" content="https://markoderic.github.io/lull/images/icon.png">
+<meta name="theme-color" content="#17153f">
+<link rel="icon" type="image/png" href="images/icon.png">
+<style>
+:root {
+  --night: #17153f;
+  --ink: #241a4d;
+  --violet: #47307f;
+  --rose: #b7568f;
+  --peach: #f7a77c;
+  --moon: #fff3dc;
+  --haze: #c9c1e6;
+  --type: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+* { box-sizing: border-box; }
+html { background: var(--night); }
+body {
+  margin: 0;
+  background: var(--night);
+  color: var(--moon);
+  font-family: var(--type);
+  font-size: 19px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--moon); text-underline-offset: 0.18em; }
+:focus-visible { outline: 3px solid var(--peach); outline-offset: 3px; border-radius: 6px; }
+h1, h2, h3, p { margin: 0; }
+
+/* The hero is a Mac desktop: the sky, a menu bar and the panel hanging from Lull's own icon. */
+.desktop {
+  position: relative;
+  overflow: hidden;
+  min-height: min(100vh, 860px);
+  background: linear-gradient(180deg, #17153f 0%, #47307f 44%, #b7568f 72%, #f7a77c 100%);
+  isolation: isolate;
+}
+.menubar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  height: 30px;
+  padding: 0 16px;
+  font-size: 13px;
+  background: rgba(23, 21, 63, 0.35);
+  color: var(--moon);
+}
+.menubar .name { margin-right: auto; font-weight: 600; }
+.menubar .lull-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 22px;
+  border-radius: 5px;
+  background: rgba(255, 243, 220, 0.24);
+}
+.moon {
+  position: absolute;
+  z-index: -2;
+  left: 50%;
+  top: 6%;
+  width: clamp(90px, 13vw, 170px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--moon);
+  box-shadow: 0 0 110px 34px rgba(255, 241, 214, 0.34);
+}
+.dunes {
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  bottom: -1px;
+  width: 200%;
+  display: block;
+  animation: drift linear infinite;
+}
+.dunes.back { height: 40%; animation-duration: 180s; }
+.dunes.middle { height: 30%; animation-duration: 120s; animation-direction: reverse; }
+.dunes.front { height: 19%; animation-duration: 80s; }
+@keyframes drift { to { transform: translateX(-50%); } }
+/* Like the app: nothing moves when nobody can see it. */
+.resting .dunes { animation-play-state: paused; }
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 40px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 32px 170px;
+}
+.pitch { padding-top: clamp(40px, 11vh, 110px); }
+.pitch img { display: block; width: 76px; height: 76px; margin-bottom: 22px; }
+h1 {
+  font-size: clamp(44px, 6.8vw, 84px);
+  line-height: 1.02;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  max-width: 12em;
+}
+.lede { margin-top: 20px; font-size: clamp(20px, 2.2vw, 25px); line-height: 1.35; max-width: 27em; }
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 34px;
+  padding: 20px 36px 20px 30px;
+  border-radius: 999px;
+  background: var(--moon);
+  color: var(--ink);
+  font-size: clamp(22px, 2.6vw, 29px);
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 10px 34px rgba(23, 21, 63, 0.45);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.download:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(23, 21, 63, 0.55); }
+.download:active { transform: translateY(1px); }
+.download svg { flex: none; width: 1.05em; height: 1.05em; }
+.fineprint { margin-top: 16px; font-size: 16px; max-width: 30em; }
+.status { margin-top: 16px; font-size: 19px; font-weight: 600; max-width: 28em; }
+.status:empty { display: none; }
+.elsewhere { display: none; margin-top: 18px; padding: 12px 16px; border-radius: 12px; background: rgba(23, 21, 63, 0.6); font-size: 17px; max-width: 28em; }
+.not-mac .elsewhere { display: block; }
+
+/* The real panel, hanging from the menu bar icon above it. */
+.panel {
+  align-self: start;
+  margin-top: 6px;
+  padding-right: 0;
+}
+.panel img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 26px 70px rgba(23, 21, 63, 0.6);
+}
+.panel p { margin-top: 12px; font-size: 15px; text-align: center; }
+
+/* Everything below the desktop is one quiet column. */
+main { max-width: 720px; margin: 0 auto; padding: 72px 32px 40px; }
+h2 { font-size: clamp(32px, 4vw, 42px); line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; }
+section + section { margin-top: 76px; }
+.steps { list-style: none; margin: 34px 0 0; padding: 0; counter-reset: step; }
+.steps li {
+  position: relative;
+  counter-increment: step;
+  padding: 0 0 38px 74px;
+}
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: -2px;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--moon);
+  color: var(--ink);
+  font-size: 25px;
+  font-weight: 700;
+}
+.steps h3 { font-size: 24px; line-height: 1.25; font-weight: 700; }
+.steps p { margin-top: 6px; color: var(--haze); }
+.steps strong { color: var(--moon); font-weight: 600; }
+.drag {
+  display: block;
+  width: 100%;
+  max-width: 440px;
+  height: auto;
+  margin-top: 18px;
+  border-radius: 14px;
+}
+.bar {
+  display: block;
+  width: 100%;
+  max-width: 440px;
+  height: auto;
+  margin-top: 18px;
+  border-radius: 10px;
+}
+details { border-top: 1px solid rgba(201, 193, 230, 0.28); }
+details:last-of-type { border-bottom: 1px solid rgba(201, 193, 230, 0.28); }
+.answers { margin-top: 26px; }
+summary {
+  cursor: pointer;
+  padding: 18px 0;
+  font-size: 21px;
+  font-weight: 600;
+}
+details p { padding-bottom: 20px; color: var(--haze); }
+details p + p { margin-top: -8px; }
+details strong { color: var(--moon); font-weight: 600; }
+.again { margin-top: 76px; text-align: center; }
+.again .download { margin-top: 0; }
+footer { max-width: 720px; margin: 0 auto; padding: 30px 32px 56px; font-size: 16px; color: var(--haze); }
+footer a { color: var(--haze); }
+
+@media (max-width: 860px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding: 0 22px 150px; gap: 34px; }
+  .panel { max-width: 340px; }
+  .moon { left: 68%; top: 9%; }
+  /* The hero is very tall here, so the dunes get fixed heights or they stretch into blobs. */
+  .dunes.back { height: 230px; }
+  .dunes.middle { height: 170px; }
+  .dunes.front { height: 100px; }
+  main { padding: 54px 22px 30px; }
+  footer { padding: 26px 22px 46px; }
+  .steps li { padding-left: 64px; }
+  .steps li::before { width: 44px; height: 44px; font-size: 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dunes { animation: none; }
+  .download { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="desktop" id="desktop">
+  <div class="menubar" aria-hidden="true">
+    <span class="name">Your Mac's menu bar</span>
+    <span class="lull-icon">
+      <svg width="17" height="15" viewBox="0 0 24 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><rect x="6" y="6" width="17" height="14" rx="2.5"/><path d="M2 15V4a2.5 2.5 0 0 1 2.5-2.5H18"/><circle cx="17.5" cy="10.5" r="1.4" fill="currentColor" stroke="none"/><path d="m7 17 4.5-4 3 2.5 3-2.5 5 4"/></svg>
+    </span>
+  </div>
+
+  <div class="moon" aria-hidden="true"></div>
+  <svg class="dunes back" viewBox="0 0 2400 300" preserveAspectRatio="none" aria-hidden="true"><path fill="#6a3f8f" d="M0 120C200 40 400 40 600 120S1000 200 1200 120s400-80 600 0 400 80 600 0V300H0Z"/></svg>
+  <svg class="dunes middle" viewBox="0 0 2400 300" preserveAspectRatio="none" aria-hidden="true"><path fill="#41296f" d="M0 150C150 70 450 70 600 150s450 70 600 0 450-80 600 0 450 70 600 0V300H0Z"/></svg>
+  <svg class="dunes front" viewBox="0 0 2400 300" preserveAspectRatio="none" aria-hidden="true"><path fill="#17153f" d="M0 130C200 210 400 210 600 130S1000 50 1200 130s400 80 600 0 400-80 600 0V300H0Z"/></svg>
+
+  <div class="hero">
+    <div class="pitch">
+      <img src="images/icon.png" width="76" height="76" alt="The Lull app icon: a moon over dunes at dusk">
+      <h1>Turn any GIF into your Mac's wallpaper</h1>
+      <p class="lede">Videos too. It rests the moment you can't see it, so your Mac stays fast.</p>
+      <a class="download" id="download" href="https://github.com/markoderic/lull/releases/latest/download/Lull.dmg" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13m-6-6 6 6 6-6"/><path d="M4 21h16"/></svg>
+        Download for Mac
+      </a>
+      <p class="status" id="status" role="status"></p>
+      <p class="fineprint">It's free, with no account and no ads. It needs a Mac with an M1 chip or newer. <a href="#will-it-work">Will it work on mine?</a></p>
+      <p class="elsewhere">Lull is for Mac computers. Open this page on your Mac to download it.</p>
+    </div>
+    <figure class="panel" style="margin-left:0;margin-right:0;margin-bottom:0">
+      <img src="images/panel-dark.png" width="320" height="491" alt="The Lull panel, showing a preview of the wallpaper, a frame slider, a row of wallpapers to choose from, and a Day and Night schedule">
+    </figure>
+  </div>
+</header>
+
+<main>
+  <section id="install" aria-labelledby="install-title">
+    <h2 id="install-title">Three steps, about a minute</h2>
+    <ol class="steps">
+      <li>
+        <h3>Open the file you downloaded</h3>
+        <p>It's called <strong>Lull.dmg</strong>, and it's in your <strong>Downloads</strong> folder. Double-click it.</p>
+      </li>
+      <li>
+        <h3>Drag Lull onto Applications</h3>
+        <p>A window opens showing you where. Drag the moon icon across, along the arrow.</p>
+        <svg class="drag" viewBox="0 0 440 150" role="img" aria-label="The Lull icon on the left, an arrow pointing right, and the Applications folder on the right">
+          <rect width="440" height="150" fill="#47307f"/>
+          <image href="images/icon.png" x="62" y="28" width="94" height="94"/>
+          <path d="M178 75h76m-18-18 18 18-18 18" fill="none" stroke="#fff3dc" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M290 50a7 7 0 0 1 7-7h26l10 11h43a7 7 0 0 1 7 7v47a7 7 0 0 1-7 7h-79a7 7 0 0 1-7-7Z" fill="#c9c1e6"/>
+          <path d="M290 66h93v42a7 7 0 0 1-7 7h-79a7 7 0 0 1-7-7Z" fill="#fff3dc"/>
+        </svg>
+      </li>
+      <li>
+        <h3>Open Lull from Applications</h3>
+        <p>Your Mac asks if you're sure, because it came from the internet. Click <strong>Open</strong>. Then a small panel appears from a new icon at the <strong>top right of your screen</strong>. Drop a GIF or video onto it, and it's your wallpaper.</p>
+        <svg class="bar" viewBox="0 0 440 44" role="img" aria-label="The menu bar at the top of the screen, with the Lull icon highlighted on the right">
+          <rect width="440" height="44" fill="#47307f"/>
+          <rect x="302" y="7" width="42" height="30" rx="7" fill="#fff3dc"/>
+          <g fill="none" stroke="#241a4d" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" transform="translate(311 12) scale(1)"><rect x="6" y="6" width="17" height="14" rx="2.5"/><path d="M2 15V4a2.5 2.5 0 0 1 2.5-2.5H18"/></g>
+          <g fill="#c9c1e6"><rect x="360" y="17" width="16" height="10" rx="3"/><rect x="388" y="17" width="34" height="10" rx="3"/></g>
+          <rect x="18" y="17" width="26" height="10" rx="3" fill="#c9c1e6"/><rect x="58" y="17" width="44" height="10" rx="3" fill="#c9c1e6"/><rect x="116" y="17" width="34" height="10" rx="3" fill="#c9c1e6"/>
+        </svg>
+      </li>
+    </ol>
+  </section>
+
+  <section id="will-it-work" aria-labelledby="work-title">
+    <h2 id="work-title">Will it work on my Mac?</h2>
+    <p style="margin-top:16px">Click the <strong>Apple logo</strong> at the top left of your screen, then <strong>About This Mac</strong>. You need:</p>
+    <ul style="margin:14px 0 0;padding-left:1.1em;color:var(--haze)">
+      <li style="margin-bottom:6px"><strong style="color:var(--moon)">A chip that starts with "Apple M"</strong>, like Apple M1 or Apple M4. Most Macs from late 2020 onward have one. If it says Intel, Lull won't run on your Mac.</li>
+      <li><strong style="color:var(--moon)">macOS 15.4 or later.</strong> If yours is older, you can usually update for free in System Settings, under General, then Software Update.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="answers-title">
+    <h2 id="answers-title">Common questions</h2>
+    <div class="answers">
+      <details>
+        <summary>Is it safe?</summary>
+        <p>Yes. Apple scanned Lull for malware and approved it before it was published, and your Mac checks that approval when you open it. Lull doesn't connect to the internet and doesn't collect anything about you. Its code is <a href="https://github.com/markoderic/lull">public</a>, so anyone can read it.</p>
+      </details>
+      <details>
+        <summary>I opened it and nothing happened</summary>
+        <p>Lull has no window or Dock icon. It lives in the menu bar at the <strong>top right of your screen</strong>, as a small stack of photos. Click it to open the panel.</p>
+        <p>Can't see it? Open Lull again from Applications and the panel appears. On a MacBook, the camera notch can hide icons when there are a lot of them, so quitting another app with an icon up there brings it back.</p>
+      </details>
+      <details>
+        <summary>Why isn't my wallpaper moving?</summary>
+        <p>To keep your Mac fast, it only plays after you <strong>click your desktop</strong>, and it freezes when you go back to an app. If you'd rather it kept moving around your windows, click the Lull icon, then the <strong>…</strong> button, then <strong>Whenever Visible</strong>.</p>
+      </details>
+      <details>
+        <summary>Where do I get GIFs and videos?</summary>
+        <p>Use any GIF, MP4 or MOV on your Mac, including ones you've saved from the internet or made yourself. For the sharpest result, use one that's about as wide as your screen. Lull tells you if a file won't fit well, and can fit it for you.</p>
+      </details>
+      <details>
+        <summary>Does it replace my current wallpaper?</summary>
+        <p>No. Your own wallpaper stays exactly as it is, underneath. Quit Lull and it's back.</p>
+      </details>
+      <details>
+        <summary>How do I remove it?</summary>
+        <p>Click the Lull icon, then the <strong>…</strong> button, then <strong>Quit Lull</strong>. Then drag Lull from your Applications folder to the Trash.</p>
+      </details>
+    </div>
+  </section>
+
+  <p class="again">
+    <a class="download" href="https://github.com/markoderic/lull/releases/latest/download/Lull.dmg" download>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v13m-6-6 6 6 6-6"/><path d="M4 21h16"/></svg>
+      Download for Mac
+    </a>
+  </p>
+</main>
+
+<footer>
+  Lull is free and open source. <a href="https://github.com/markoderic/lull">See the code on GitHub</a>, or <a href="https://github.com/markoderic/lull/issues">report a problem</a>.
+</footer>
+
+<script>
+  // Download buttons say what happens next, and take people to the steps.
+  document.querySelectorAll('a.download').forEach(function (button) {
+    button.addEventListener('click', function () {
+      document.getElementById('status').textContent = 'Downloading. When it finishes, follow the three steps below.';
+      setTimeout(function () {
+        document.getElementById('install').scrollIntoView({
+          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+        });
+      }, 900);
+    });
+  });
+
+  // This is only for Macs, and it's kinder to say so before someone downloads it.
+  var agent = navigator.userAgent;
+  var isMac = /Macintosh/.test(agent) && navigator.maxTouchPoints < 2;
+  if (!isMac) document.body.classList.add('not-mac');
+
+  // Like the app itself, the hero rests when it's off screen.
+  var desktop = document.getElementById('desktop');
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      desktop.classList.toggle('resting', !entries[0].isIntersecting);
+    }).observe(desktop);
+  }
+</script>
+</body>
+</html>

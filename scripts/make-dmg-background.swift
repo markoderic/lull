@@ -61,7 +61,9 @@ func render(scale: CGFloat) -> CGImage {
         string.draw(at: CGPoint(x: (width - string.size().width) / 2, y: y))
     }
     draw("Drag Lull to Applications", size: 26, weight: .semibold, y: height - 72)
-    draw("Then open Lull from your Applications folder.", size: 14, weight: .regular, y: 34)
+    // Finder's title bar takes up part of the window's height, which cuts off the bottom of this
+    // picture, so this line sits well above the picture's edge.
+    draw("Then open Lull from your Applications folder.", size: 14, weight: .regular, y: 68)
     NSGraphicsContext.restoreGraphicsState()
 
     return context.makeImage()!
