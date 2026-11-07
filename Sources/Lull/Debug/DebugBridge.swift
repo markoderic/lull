@@ -26,7 +26,9 @@ final class DebugBridge {
             let command = notification.object as? String ?? ""
             MainActor.assumeIsolated { self?.run(command) }
         }
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+        // Timing checks need to see changes as they happen.
+        let interval = ProcessInfo.processInfo.environment["LULL_DEBUG_STATE_INTERVAL"].flatMap(Double.init) ?? 0.25
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.writeState() }
         }
         RunLoop.main.add(timer, forMode: .common)

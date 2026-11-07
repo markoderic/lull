@@ -16,13 +16,22 @@ case "send":
     RunLoop.current.run(until: Date().addingTimeInterval(0.05))
 
 case "hide-apps":
-    let visible = NSWorkspace.shared.runningApplications.filter {
-        $0.activationPolicy == .regular && !$0.isHidden && $0.bundleIdentifier != "com.apple.finder"
+    // macOS can decline to hide an app, so keep asking until they've all gone.
+    var hidden = Set<Int32>()
+    for _ in 0..<6 {
+        let visible = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular && !$0.isHidden && $0.bundleIdentifier != "com.apple.finder"
+        }
+        if visible.isEmpty { break }
+        for app in visible {
+            hidden.insert(app.processIdentifier)
+            _ = app.hide()
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
     }
-    let pids = visible.map { String($0.processIdentifier) }.joined(separator: "\n")
+    let pids = hidden.map(String.init).joined(separator: "\n")
     try pids.write(toFile: arguments[1], atomically: true, encoding: .utf8)
-    visible.forEach { _ = $0.hide() }
-    RunLoop.current.run(until: Date().addingTimeInterval(1))
+    RunLoop.current.run(until: Date().addingTimeInterval(0.5))
 
 case "show-apps":
     let text = (try? String(contentsOfFile: arguments[1], encoding: .utf8)) ?? ""
@@ -50,18 +59,30 @@ case "level":
     print("desktop=\(CGWindowLevelForKey(.desktopWindow)) icons=\(CGWindowLevelForKey(.desktopIconWindow))")
 
 case "cover":
-    // cover <full|maximized|partial|translucent|focus|fullscreen> <seconds>
+    // cover <full|maximized|partial|translucent|focus|fullscreen|leaves-after-finder> <seconds>
     let mode = arguments[1]
     let seconds = Double(arguments[2]) ?? 3
     let app = NSApplication.shared
     let screen = NSScreen.main!
-    let takesFocus = mode == "focus" || mode == "fullscreen"
+    // Fills the screen until Finder takes focus, then leaves a moment later, as a hidden app does.
+    let leavesAfterFinder = mode == "leaves-after-finder"
+    let takesFocus = mode == "focus" || mode == "fullscreen" || leavesAfterFinder
     app.setActivationPolicy(takesFocus ? .regular : .accessory)
+
+    if leavesAfterFinder {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { notification in
+            let activated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard activated?.bundleIdentifier == "com.apple.finder" else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { exit(0) }
+        }
+    }
 
     let window: NSWindow
     if takesFocus {
         window = NSWindow(
-            contentRect: NSRect(x: 200, y: 200, width: 400, height: 240),
+            contentRect: leavesAfterFinder ? screen.visibleFrame : NSRect(x: 200, y: 200, width: 400, height: 240),
             styleMask: [.titled, .resizable], backing: .buffered, defer: false
         )
         window.title = "Lull test window"
@@ -84,8 +105,10 @@ case "cover":
     window.orderFrontRegardless()
     if takesFocus {
         // macOS can decline an activation, so keep asking while the window is up.
+        var keepAsking = true
         Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
-            if !app.isActive { app.activate(ignoringOtherApps: true) }
+            if !app.isActive, keepAsking { app.activate(ignoringOtherApps: true) }
+            if leavesAfterFinder, app.isActive { keepAsking = false }
         }
         app.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

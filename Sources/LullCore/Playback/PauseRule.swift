@@ -52,6 +52,18 @@ public struct PlaybackInputs: Equatable, Sendable {
         return rule == .wheneverVisible || finderIsFrontmost
     }
 
+    /// How soon to check coverage again, or nil when checking couldn't change the decision.
+    ///
+    /// While the desktop is covered, the next check is what starts the wallpaper, so it comes
+    /// quickly: a window on its way out is often still there at the moment focus changes. Once
+    /// the desktop is open, a late check only means a little playback nobody can see. Under
+    /// Whenever Visible, being covered can last all day, so that case checks less often.
+    public var coverageCheckInterval: Double? {
+        guard needsCoverageCheck else { return nil }
+        if desktopIsOpen { return 2 }
+        return rule == .desktopFocus ? 0.1 : 0.25
+    }
+
     /// The panel's preview stays live while it's open. This never moves the desktop: the desktop
     /// only ever follows `PauseRule`.
     public var previewShouldPlay: Bool {

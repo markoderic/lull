@@ -6,11 +6,11 @@ import LullCore
 @MainActor
 final class PlaybackMonitor {
     private static let finderBundleID = "com.apple.finder"
-    private static let coverageInterval: TimeInterval = 2
 
     private(set) var inputs: PlaybackInputs
     private var lastReported: PlaybackInputs?
     private var coverageTimer: Timer?
+    private var coverageTimerInterval: Double?
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     /// Called whenever anything the rule looks at changes.
     private let onChange: (PlaybackInputs) -> Void
@@ -45,12 +45,8 @@ final class PlaybackMonitor {
 
     private func update(_ change: (inout PlaybackInputs) -> Void) {
         change(&inputs)
-        if inputs.needsCoverageCheck {
-            checkCoverage()
-            startCoverageTimerIfNeeded()
-        } else {
-            stopCoverageTimer()
-        }
+        if inputs.needsCoverageCheck { checkCoverage() }
+        scheduleCoverageTimer()
         apply()
     }
 
@@ -80,23 +76,21 @@ final class PlaybackMonitor {
         )
     }
 
-    private func startCoverageTimerIfNeeded() {
-        guard coverageTimer == nil else { return }
-        let timer = Timer(timeInterval: Self.coverageInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.inputs.needsCoverageCheck else { return }
-                self.checkCoverage()
-                self.apply()
-            }
-        }
-        timer.tolerance = 0.5
-        RunLoop.main.add(timer, forMode: .common)
-        coverageTimer = timer
-    }
-
-    private func stopCoverageTimer() {
+    /// Keeps the timer at the pace the current inputs call for, and leaves it alone otherwise so a
+    /// steady pace isn't pushed back by every update.
+    private func scheduleCoverageTimer() {
+        let interval = inputs.coverageCheckInterval
+        guard interval != coverageTimerInterval else { return }
         coverageTimer?.invalidate()
         coverageTimer = nil
+        coverageTimerInterval = interval
+        guard let interval else { return }
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+        timer.tolerance = interval / 4
+        RunLoop.main.add(timer, forMode: .common)
+        coverageTimer = timer
     }
 
     // MARK: System events

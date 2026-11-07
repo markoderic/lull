@@ -106,4 +106,29 @@ struct PauseRuleTests {
         #expect(!inputs(inactive: true).needsCoverageCheck)
         #expect(!inputs(lowPower: true).needsCoverageCheck)
     }
+
+    @Test func whileCoveredTheNextCheckComesQuicklyBecauseItStartsTheWallpaper() throws {
+        let covered = try #require(inputs(open: false).coverageCheckInterval)
+        #expect(covered <= 0.1)
+    }
+
+    @Test func onceTheDesktopIsOpenChecksRelaxBecauseTheyOnlyStopPlayback() throws {
+        let open = try #require(inputs().coverageCheckInterval)
+        let covered = try #require(inputs(open: false).coverageCheckInterval)
+        #expect(open >= 1)
+        #expect(open > covered)
+    }
+
+    @Test func wheneverVisibleAlsoReactsQuicklyWhenUncovered() throws {
+        let covered = try #require(inputs(rule: .wheneverVisible, finder: false, open: false).coverageCheckInterval)
+        #expect(covered <= 0.25)
+    }
+
+    @Test func noChecksAreScheduledWhenTheyCouldntChangeAnything() {
+        #expect(inputs(finder: false).coverageCheckInterval == nil)
+        #expect(inputs(finder: false, open: false).coverageCheckInterval == nil)
+        #expect(inputs(animated: false, open: false).coverageCheckInterval == nil)
+        #expect(inputs(open: false, locked: true).coverageCheckInterval == nil)
+        #expect(inputs(open: false, lowPower: true).coverageCheckInterval == nil)
+    }
 }

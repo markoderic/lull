@@ -206,6 +206,13 @@ def main():
     signature = subprocess.run(["codesign", "-d", "--verbose=2", str(ROOT / "dist/debug/Lull.app")], capture_output=True, text=True).stderr
     print(next((line for line in signature.splitlines() if "flags=" in line), "no signature found"))
 
+    # A locked screen takes focus away from every app, and display sleep locks the screen on many
+    # Macs. Nothing here counts as activity, so keep the display awake until this script ends.
+    subprocess.Popen(["caffeinate", "-d", "-w", str(os.getpid())])
+    front = subprocess.run([str(CONTROL), "front"], capture_output=True, text=True).stdout.strip()
+    if front == "com.apple.loginwindow":
+        sys.exit("The screen is locked. Unlock it and run this again.")
+
     # A copy someone's really using would play on the bare desktop and throw off every measurement.
     running = subprocess.run(["pgrep", "-x", "Lull"], capture_output=True, text=True).stdout.split()
     real_copy = None
@@ -751,6 +758,21 @@ def scenario(run, media, extra_media):
     time.sleep(3)
     run.check("a partial window doesn't pause it", run.state()["engineWantsPlaying"])
     cover.wait()
+
+    # The window is still there at the moment Finder takes focus, so only a later check can see the
+    # desktop. This used to take over 2 seconds, however fast the window left.
+    run.section("Coming back to the desktop")
+    time.sleep(1.5)
+    leaving = run.cover("leaves-after-finder", 30)
+    run.wait("an app fills the screen and pauses it", lambda s: not s["finderFront"] and not s["desktopMoving"] and not s["enginePlayerLoaded"], timeout=8)
+    time.sleep(0.5)
+    started = time.time()
+    run.go_to_desktop()
+    state = run.wait("switching to the desktop starts it", lambda s: s["desktopOpen"] and s["desktopMoving"], timeout=5)
+    elapsed = time.time() - started
+    print(f"        moving {elapsed:.2f}s after the switch, including 0.25s for the window to leave")
+    run.check("it reacts in about a second at most", elapsed < 1.2, f"took {elapsed:.2f}s")
+    leaving.wait()
 
     run.section("Whenever Visible")
     run.send("rule visible")
