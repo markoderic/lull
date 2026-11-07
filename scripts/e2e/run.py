@@ -203,6 +203,15 @@ def main():
     signature = subprocess.run(["codesign", "-d", "--verbose=2", str(ROOT / "dist/debug/Lull.app")], capture_output=True, text=True).stderr
     print(next((line for line in signature.splitlines() if "flags=" in line), "no signature found"))
 
+    # A copy someone's really using would play on the bare desktop and throw off every measurement.
+    running = subprocess.run(["pgrep", "-x", "Lull"], capture_output=True, text=True).stdout.split()
+    real_copy = None
+    if running:
+        command = subprocess.run(["ps", "-o", "comm=", "-p", running[0]], capture_output=True, text=True).stdout.strip()
+        real_copy = command.split("/Contents/MacOS/")[0]
+        subprocess.run(["pkill", "-x", "Lull"])
+        time.sleep(1)
+
     run = Run(options.artifacts)
     media = run.make_media()
     # These checks don't need a bare desktop, so they leave open apps alone.
@@ -240,6 +249,8 @@ def main():
         if (run.tmp / "cover.log").exists():
             shutil.copy(run.tmp / "cover.log", run.artifacts / "cover.log")
         shutil.rmtree(run.tmp, ignore_errors=True)
+        if real_copy:
+            subprocess.run(["open", real_copy])
 
     print(f"\n{run.passed} passed, {len(run.failures)} failed")
     for failure in run.failures:
