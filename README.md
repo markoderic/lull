@@ -10,6 +10,12 @@
 
 <p align="center">It's free, with no account and no ads. It needs a Mac with an M1 chip or newer, on macOS 15.4 or later.</p>
 
+## See it in action
+
+![Illustrated Lull demo](docs/media/lull-demo.gif)
+
+[Watch the 20-second video](docs/media/lull-demo.mp4). This is an illustrated demo, not a screen recording.
+
 ## Install
 
 1. Open **Lull.dmg** from your Downloads folder.
@@ -99,6 +105,8 @@ Measured on the release build on an M5 Pro MacBook Pro with macOS 27. CPU figure
 | 1080p video, 30 FPS | 1.6% | 1.7% | 13.4% | 28 MB | 51 MB |
 | GIF with Smooth Motion, 120 FPS | 3.6% | 4.3% | 44.6% | 22 MB | 55 MB |
 | 4K video, 120 FPS | 4.1% | 7.0% | 44.9% | 56 MB | 430 MB |
+
+Add up Lull, the decoder and WindowServer's extra work, then divide by 18 cores, and you get the share of this Mac's total processing power. A GIF or 1080p video uses under 1%, and 4K at 120 FPS uses about 3%. A Mac with fewer cores will show a higher share.
 
 Two honest notes:
 
